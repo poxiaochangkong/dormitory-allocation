@@ -1,0 +1,31 @@
+﻿# NOTE:
+# The previous rule `*` would ignore EVERYTHING, including any new source code.
+# We keep design docs tracked, but allow normal development files/folders.
+*
+#keep backend
+!backend/
+!backend/**
+# Common build/output folders
+**/build/
+**/out/
+**/.vs/
+**/.vscode/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/*.user
+**/*.log
+
+# vcpkg (if you choose to keep it inside the repo)
+vcpkg_installed/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+
+
+# Keep documentation files
+!系统设计说明书.docx
+!需求分析.md
+!readme.md
+!系统设计说明书_简版.md

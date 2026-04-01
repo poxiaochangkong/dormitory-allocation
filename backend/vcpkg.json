@@ -1,0 +1,17 @@
+{
+    "name": "dormitory-allocation-backend",
+    "version-string": "0.0.1",
+    "description": "C++ backend skeleton for dormitory allocation system",
+    "dependencies": [
+        "cpp-httplib",
+        "nlohmann-json",
+        "spdlog",
+        "cli11",
+        {
+            "name": "mysql-connector-cpp",
+            "features": [
+                "jdbc"
+            ]
+        }
+    ]
+}

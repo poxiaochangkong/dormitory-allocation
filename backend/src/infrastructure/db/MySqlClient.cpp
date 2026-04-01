@@ -1,9 +1,10 @@
 #include "infrastructure/db/MySqlClient.h"
 
+#include <sstream>
 #include <stdexcept>
 
-// mysql-connector-cpp headers are included in the header via:
-//   <mysqlx/xdevapi.h>
+// Classic API (JDBC / cppconn)
+#include <mysql/jdbc.h>
 
 namespace dorm_alloc
 {
@@ -17,17 +18,23 @@ namespace dorm_alloc
             {
             }
 
+            MySqlClient::~MySqlClient() = default;
+
             void MySqlClient::ConnectServer()
             {
                 try
                 {
-                    // MySQL X DevAPI session connection string:
-                    // mysqlx://user:password@host:port
-                    const std::string uri =
-                        "mysqlx://" + cfg_.user + ":" + cfg_.password +
-                        "@" + cfg_.host + ":" + std::to_string(cfg_.port);
+                    // Classic API uses standard MySQL protocol (default 3306).
+                    // URL format: tcp://host:port
+                    std::ostringstream oss;
+                    oss << "tcp://" << cfg_.host << ":" << cfg_.port;
+                    const std::string url = oss.str();
 
-                    session_.reset(new mysqlx::Session(uri));
+                    driver_ = sql::mysql::get_mysql_driver_instance();
+                    conn_.reset(driver_->connect(url, cfg_.user, cfg_.password));
+
+                    // Optional but recommended.
+                    conn_->setClientOption("OPT_RECONNECT", "true");
                 }
                 catch (const std::exception &e)
                 {
@@ -37,26 +44,32 @@ namespace dorm_alloc
 
             void MySqlClient::UseDatabase(const std::string &db_name)
             {
-                if (!session_)
+                if (!conn_)
                 {
                     throw std::runtime_error("UseDatabase called before ConnectServer");
                 }
 
-                // In X DevAPI, schema can be chosen by sending SQL.
-                // NOTE: Using plain SQL here is sufficient for bootstrap stage.
-                Execute("USE `" + db_name + "`;");
+                try
+                {
+                    conn_->setSchema(db_name);
+                }
+                catch (const std::exception &e)
+                {
+                    throw std::runtime_error(std::string("Failed to select database: ") + e.what() + " | db=" + db_name);
+                }
             }
 
             void MySqlClient::Execute(const std::string &sql_text)
             {
-                if (!session_)
+                if (!conn_)
                 {
                     throw std::runtime_error("Execute called before ConnectServer");
                 }
 
                 try
                 {
-                    session_->sql(sql_text).execute();
+                    std::unique_ptr<sql::Statement> stmt(conn_->createStatement());
+                    stmt->execute(sql_text);
                 }
                 catch (const std::exception &e)
                 {

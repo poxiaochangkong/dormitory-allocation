@@ -36,15 +36,23 @@ target_link_libraries(dorm_alloc_core
   PUBLIC
     nlohmann_json::nlohmann_json
     spdlog::spdlog
-    unofficial::mysql-connector-cpp::connector
 )
 
-# Ensure the include directories from dependencies are correctly propagated.
-# This helps MSVC find headers such as <mysqlx/xdevapi.h>.
-target_link_libraries(dorm_alloc_core
-  PUBLIC
-    unofficial::mysql-connector-cpp::connector
-)
+# Use Classic API (JDBC) target if available.
+# This keeps DB access on standard MySQL protocol/port (default 3306),
+# instead of X DevAPI/X Protocol (typically 33060).
+if(TARGET unofficial::mysql-connector-cpp::connector-jdbc)
+  target_link_libraries(dorm_alloc_core
+    PUBLIC
+      unofficial::mysql-connector-cpp::connector-jdbc
+  )
+else()
+  message(FATAL_ERROR
+    "mysql-connector-cpp jdbc target not found. "
+    "Please ensure vcpkg installs mysql-connector-cpp[jdbc] with a supported triplet "
+    "(e.g. x64-windows-static)."
+  )
+endif()
 
 target_sources(dorm_alloc_core
   PRIVATE

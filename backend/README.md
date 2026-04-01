@@ -35,3 +35,11 @@ cmake --build --preset default
 
 Executables read a JSON config file (see `config/config.example.json`).
 It contains MySQL connection details and the database name.
+
+## MySQL connector mode (important)
+
+- The backend now uses **mysql-connector-cpp Classic API (JDBC/cppconn)**.
+- This means DB connection uses standard MySQL protocol/port (**3306** by default),
+  not X DevAPI/X Protocol (commonly 33060).
+- In vcpkg, `mysql-connector-cpp[jdbc]` on Windows requires a static triplet,
+  so the preset sets `VCPKG_TARGET_TRIPLET=x64-windows-static`.

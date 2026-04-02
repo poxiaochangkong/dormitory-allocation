@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 
+# Keep MSVC runtime consistent with vcpkg static triplet dependencies
+# (e.g. mysql-connector-cpp[jdbc] on x64-windows-static uses /MT,/MTd).
+# NOTE: CMP0091 must be set BEFORE the first project()/enable_language().
+cmake_policy(SET CMP0091 NEW)
+
 # Dormitory Allocation Backend (C++)
 #
 # IMPORTANT COMPATIBILITY NOTE:
@@ -12,6 +17,10 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 # ----------------------------
 # Dependencies (provided by vcpkg manifest mode)
 # ----------------------------
@@ -21,6 +30,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
 find_package(unofficial-mysql-connector-cpp CONFIG REQUIRED)
+find_package(unofficial-libmysql CONFIG REQUIRED)
 
 # ----------------------------
 # Core library: domain/application/algorithm/infrastructure
@@ -45,6 +55,7 @@ if(TARGET unofficial::mysql-connector-cpp::connector-jdbc)
   target_link_libraries(dorm_alloc_core
     PUBLIC
       unofficial::mysql-connector-cpp::connector-jdbc
+      unofficial::libmysql::libmysql
   )
 else()
   message(FATAL_ERROR

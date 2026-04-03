@@ -1,3 +1,5 @@
+//此文件由工具自动生成，请勿直接修改！
+
 #include "infrastructure/config/AppConfig.h"
 
 #include <fstream>

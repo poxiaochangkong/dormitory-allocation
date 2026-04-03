@@ -1,3 +1,9 @@
+//此文件为宿舍分配系统后端的主入口，负责启动HTTP服务器并确保MySQL数据库存在。
+//主要功能包括：
+//1) 加载配置文件：从指定路径加载JSON格式的配置，包含HTTP服务器和MySQL数据库的连接信息。
+//2) MySQL数据库引导：使用MySqlClient连接到MySQL服务器，并调用DbBootstrapper确保指定的数据库存在，如果不存在则创建它。
+//3) 启动HTTP服务器：使用httplib库创建一个简单的HTTP服务器
+
 #include <cstdlib>
 #include <iostream>
 

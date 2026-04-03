@@ -1,10 +1,13 @@
-﻿# NOTE:
+﻿NOTE:
 # The previous rule `*` would ignore EVERYTHING, including any new source code.
 # We keep design docs tracked, but allow normal development files/folders.
 *
 #keep backend
 !backend/
 !backend/**
+# Allow frontend-matching
+!frontend-matching/
+!frontend-matching/**
 # Common build/output folders
 **/build/
 **/out/
@@ -23,6 +26,27 @@ vcpkg_installed/
 .DS_Store
 Thumbs.db
 
+# Ignore based on frontend-matching/.gitignore
+frontend-matching/logs
+frontend-matching/*.log
+frontend-matching/npm-debug.log*
+frontend-matching/yarn-debug.log*
+frontend-matching/yarn-error.log*
+frontend-matching/pnpm-debug.log*
+frontend-matching/lerna-debug.log*
+frontend-matching/node_modules
+frontend-matching/dist
+frontend-matching/dist-ssr
+frontend-matching/*.local
+frontend-matching/.vscode/*
+!frontend-matching/.vscode/extensions.json
+frontend-matching/.idea
+frontend-matching/.DS_Store
+frontend-matching/*.suo
+frontend-matching/*.ntvs*
+frontend-matching/*.njsproj
+frontend-matching/*.sln
+frontend-matching/*.sw?
 
 # Keep documentation files
 !系统设计说明书.docx

@@ -53,3 +53,5 @@ frontend-matching/*.sw?
 !需求分析.md
 !readme.md
 !系统设计说明书_简版.md
+!docs
+!docs/**

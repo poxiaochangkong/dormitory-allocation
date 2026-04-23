@@ -46,7 +46,6 @@ const handleLogin = () => {
   if (!username.value) {
     return ElMessage.warning('请输入账号')
   }
-
   loading.value = true
   
   // 模拟一个加载效果，显得系统在处理
@@ -57,7 +56,7 @@ const handleLogin = () => {
       router.push('/admin/dashboard') // 跳转到管理员大盘
     } else {
       ElMessage.success('登录成功，请开始填写问卷')
-      router.push('/questionnaire') // 跳转到学生问卷
+      router.push('/student/home') // 【关键修改】：跳转到学生主页
     }
   }, 800)
 }

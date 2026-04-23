@@ -1,3 +1,7 @@
+#此文件定义了CMake构建系统的配置，用于构建宿舍分配系统的后端部分。
+#它指定了项目名称、C++标准、依赖项以及构建目标（核心库、服务器可执行文件和CLI可执行文件）。
+#该配置使用vcpkg管理依赖项，并确保在Windows上使用静态运行时库以避免DLL依赖问题。
+
 cmake_minimum_required(VERSION 3.14)
 
 # Keep MSVC runtime consistent with vcpkg static triplet dependencies

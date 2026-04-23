@@ -1,0 +1,53 @@
+{
+  "userId": "20261001",
+  "basicInfo": {
+    "gender": "male",
+    "college": "计算机学院",
+    "major": "软件工程"
+  },
+  "traditionalHabits": {
+    "q02_sleepTime": "B",
+    "q03_wakeTime": "B",
+    "q04_napHabit": "A",
+    "q05_sleepQuality": "A",
+    "q06_hygiene": "A",
+    "q07_laundry": "B",
+    "q08_studyPlace": "B",
+    "q09_cleaning": "A",
+    "q10_acPreference": "B"
+  },
+  "vetoSettings": {
+    "v11_smokeAlcohol": true,
+    "v12_midnightGaming": true,
+    "v13_loudSpeaker": false,
+    "v14_oppositeSex": true,
+    "v15_badHygiene": true,
+    "v16_overDemand": false,
+    "v17_boundary": true,
+    "v18_stayOut": false,
+    "v19_pets": true,
+    "v20_snoring": false
+  },
+  "personality": {
+    "p21_mbti": "INTJ",
+    "p22_socialEnergy": "C",
+    "p23_idealRelation": "B",
+    "p24_emotion": "A",
+    "p25_share": "B",
+    "p26_plan": "A",
+    "p27_stress": "B",
+    "p28_rules": "B",
+    "p29_consumption": "B"
+  },
+  "immersiveScene": {
+    "s30_acTemp": 24,
+    "s31_bedAction": "A",
+    "s32_deskState": "B",
+    "s33_doorKnock": "C",
+    "s34_curtain": "A",
+    "s35_trash": "B",
+    "s36_wash": "A",
+    "s37_noiseDb": 60,
+    "s38_balconyWet": "B"
+  }
+}

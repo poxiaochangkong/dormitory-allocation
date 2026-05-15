@@ -7,6 +7,7 @@ const routes = [
   
   // ====== 管理员端路由 ======
   { path: '/admin/dashboard', name: 'AdminDashboard', component: () => import('../views/AdminDashboard.vue') },
+  { path: '/admin/adjust', name: 'AdminAdjust', component: () => import('../views/AdminAdjust.vue') },
   
   // ====== 学生端业务流 ======
   { path: '/student/home', name: 'StudentHome', component: () => import('../views/StudentHome.vue') }, // 新增：学生任务大厅

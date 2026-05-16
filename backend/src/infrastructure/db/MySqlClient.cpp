@@ -1,4 +1,4 @@
-//此文件由工具自动生成，请勿修改！
+// 此文件由工具自动生成，请勿修改！
 #include "infrastructure/db/MySqlClient.h"
 
 #include <sstream>
@@ -75,6 +75,25 @@ namespace dorm_alloc
                 catch (const std::exception &e)
                 {
                     throw std::runtime_error(std::string("Failed to execute SQL: ") + e.what() + " | SQL=" + sql_text);
+                }
+            }
+
+            std::unique_ptr<sql::ResultSet> MySqlClient::ExecuteQuery(const std::string &sql_text)
+            {
+                if (!conn_)
+                {
+                    throw std::runtime_error("ExecuteQuery called before ConnectServer");
+                }
+
+                try
+                {
+                    std::unique_ptr<sql::Statement> stmt(conn_->createStatement());
+                    std::unique_ptr<sql::ResultSet> rs(stmt->executeQuery(sql_text));
+                    return rs;
+                }
+                catch (const std::exception &e)
+                {
+                    throw std::runtime_error(std::string("Failed to execute query: ") + e.what() + " | SQL=" + sql_text);
                 }
             }
 

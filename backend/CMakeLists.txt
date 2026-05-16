@@ -74,6 +74,9 @@ target_sources(dorm_alloc_core
     src/infrastructure/config/AppConfig.cpp
     src/infrastructure/db/MySqlClient.cpp
     src/infrastructure/db/DbBootstrapper.cpp
+    src/algorithm/MatchEngine.cpp
+    src/service/StudentService.cpp
+    src/service/AdminService.cpp
 )
 
 # ----------------------------
@@ -100,4 +103,16 @@ target_link_libraries(dorm_alloc_cli
   PRIVATE
     dorm_alloc_core
     CLI11::CLI11
+)
+
+# ----------------------------
+# Integration test executable
+# ----------------------------
+add_executable(dorm_alloc_test
+  tests/integration_test.cpp
+)
+
+target_link_libraries(dorm_alloc_test
+  PRIVATE
+    dorm_alloc_core
 )

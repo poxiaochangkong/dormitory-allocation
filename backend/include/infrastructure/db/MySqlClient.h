@@ -15,6 +15,8 @@
 namespace sql
 {
     class Connection;
+    class ResultSet;
+    class PreparedStatement;
 }
 
 namespace sql
@@ -49,6 +51,9 @@ namespace dorm_alloc
 
                 // Execute a statement that does not return a result set.
                 void Execute(const std::string &sql);
+
+                // Execute a query and return the result set.
+                std::unique_ptr<sql::ResultSet> ExecuteQuery(const std::string &sql);
 
             private:
                 dorm_alloc::infra::config::MySqlConfig cfg_;

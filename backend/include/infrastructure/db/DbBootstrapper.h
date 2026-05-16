@@ -28,6 +28,10 @@ namespace dorm_alloc
             {
             public:
                 static void EnsureDatabaseExists(MySqlClient &client, const std::string &db_name);
+
+                // Create all application tables if they do not exist.
+                // Must be called after EnsureDatabaseExists (database must be selected).
+                static void EnsureTablesExist(MySqlClient &client);
             };
 
         } // namespace db

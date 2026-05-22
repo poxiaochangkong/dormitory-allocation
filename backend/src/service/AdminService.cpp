@@ -47,9 +47,10 @@ namespace dorm_alloc
             const std::string &password)
         {
             auto rs = db.ExecuteQuery(
-                "SELECT user_id, role, gender FROM `user` "
+                "SELECT user_id, role, gender, college, major, grade "
+                "FROM `user` "
                 "WHERE student_no = '" +
-                student_no + "' AND password = '" + password +
+                Escape(student_no) + "' AND password = '" + Escape(password) +
                 "' AND role = 'admin';");
 
             if (!rs->next())
@@ -57,9 +58,31 @@ namespace dorm_alloc
                 throw std::runtime_error("Invalid admin credentials.");
             }
 
+            // Generate a token for authentication
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+            std::srand(static_cast<unsigned>(ms));
+            const char hex[] = "0123456789abcdef";
+            std::string token = "tk_";
+            for (int i = 0; i < 32; ++i)
+            {
+                token += hex[std::rand() % 16];
+            }
+
+            std::string user_id = rs->getString("user_id").asStdString();
+
+            // Store token in database
+            db.Execute(
+                "UPDATE `user` SET token = '" + Escape(token) +
+                "' WHERE user_id = '" + Escape(user_id) + "';");
+
             nlohmann::json result;
-            result["userId"] = rs->getString("user_id").asStdString();
+            result["userId"] = user_id;
+            result["studentNo"] = student_no;
             result["role"] = rs->getString("role").asStdString();
+            result["gender"] = rs->getString("gender").asStdString();
+            result["token"] = token;
             return result.dump();
         }
 
@@ -361,6 +384,15 @@ namespace dorm_alloc
                 t["major"] = rs->getString("major").asStdString();
                 t["gender"] = rs->getString("gender").asStdString();
                 t["status"] = rs->getString("status").asStdString();
+                // Include createdAt timestamp for frontend display
+                if (!rs->isNull("created_at"))
+                {
+                    t["createdAt"] = rs->getString("created_at").asStdString();
+                }
+                else
+                {
+                    t["createdAt"] = "";
+                }
                 tasks.push_back(t);
             }
 

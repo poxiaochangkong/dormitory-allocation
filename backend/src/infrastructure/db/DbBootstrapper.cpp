@@ -37,6 +37,7 @@ namespace dorm_alloc
                     "  grade VARCHAR(16),"
                     "  dorm_type INT DEFAULT 4,"
                     "  role VARCHAR(16) NOT NULL DEFAULT 'student',"
+                    "  token VARCHAR(128),"
                     "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
                     "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
                     ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;");

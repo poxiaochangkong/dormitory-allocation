@@ -18,26 +18,47 @@ namespace dorm_alloc
         {
         public:
             // Login with student number and password.
-            // Returns a JSON string: {"userId":"...","role":"student","gender":"..."}
+            // Returns JSON: {userId, studentNo, role, gender, college, major, grade, dormType, token}
             // Throws on failure.
             static std::string Login(MySqlClient &db,
                                      const std::string &student_no,
                                      const std::string &password);
 
+            // Get student basic info by userId.
+            // Returns JSON: {userId, studentNo, gender, college, major, grade, dormType}
+            static std::string GetStudentInfo(MySqlClient &db,
+                                              const std::string &user_id);
+
+            // Check whether the student has submitted the questionnaire.
+            // Returns JSON: {submitted: bool, questionnaireId: string|null}
+            static std::string GetQuestionnaireStatus(MySqlClient &db,
+                                                      const std::string &user_id);
+
             // Submit questionnaire data for a student.
-            // The data JSON contains basicInfo, questionnaire, and preference sections.
-            // Returns a JSON string: {"questionnaireId":"..."}
+            // Accepts frontend format: {basicInfo, traditionalHabits, vetoSettings, personality}
+            // Also accepts backend format: {basicInfo, questionnaire, preference, vetoItems, openText}
+            // Returns JSON: {questionnaireId: "..."}
             static std::string SubmitQuestionnaire(MySqlClient &db,
                                                    const std::string &user_id,
                                                    const std::string &data_json);
 
+            // Submit immersive scene data for a student.
+            // Returns JSON: {status: "ok"}
+            static std::string SubmitSceneData(MySqlClient &db,
+                                               const std::string &user_id,
+                                               const std::string &data_json);
+
             // Get match result for a student.
-            // Returns a JSON string with the result or empty object if no result.
+            // Returns JSON with room info, roommates, scores (5 dimensions), and explanation.
             static std::string GetMatchResult(MySqlClient &db,
                                               const std::string &user_id);
 
             // Get questionnaire template (static placeholder).
             static std::string GetQuestionnaireTemplate();
+
+        private:
+            // Generate a simple random token string.
+            static std::string GenerateToken();
         };
 
     } // namespace service

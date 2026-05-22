@@ -137,18 +137,64 @@ int main(int argc, char **argv)
                          JsonError(res, 400, e.what());
                      } });
 
-        // GET /api/student/match-result?userId=xxx
-        svr.Get("/api/student/match-result", [&client](const httplib::Request &req, httplib::Response &res)
+        // GET /api/student/info/:userId — get student basic info
+        svr.Get(R"(/api/student/info/([^/]+))", [&client](const httplib::Request &req, httplib::Response &res)
                 {
                     SetCors(res);
                     try
                     {
-                        std::string user_id = req.has_param("userId") ? req.get_param_value("userId") : "";
-                        if (user_id.empty())
-                        {
-                            JsonError(res, 400, "Missing userId parameter");
-                            return;
-                        }
+                        std::string user_id = req.matches[1];
+                        auto result = dorm_alloc::service::StudentService::GetStudentInfo(client, user_id);
+                        JsonSuccess(res, result);
+                    }
+                    catch (const std::exception &e)
+                    {
+                        JsonError(res, 400, e.what());
+                    } });
+
+        // GET /api/student/questionnaire/status/:userId — check questionnaire completion
+        svr.Get(R"(/api/student/questionnaire/status/([^/]+))", [&client](const httplib::Request &req, httplib::Response &res)
+                {
+                    SetCors(res);
+                    try
+                    {
+                        std::string user_id = req.matches[1];
+                        auto result = dorm_alloc::service::StudentService::GetQuestionnaireStatus(client, user_id);
+                        JsonSuccess(res, result);
+                    }
+                    catch (const std::exception &e)
+                    {
+                        JsonError(res, 400, e.what());
+                    } });
+
+        // POST /api/student/scene/submit — submit immersive scene data
+        svr.Post("/api/student/scene/submit", [&client](const httplib::Request &req, httplib::Response &res)
+                 {
+                     SetCors(res);
+                     try
+                     {
+                         auto body = nlohmann::json::parse(req.body);
+                         std::string user_id = body.value("userId", "");
+                         if (user_id.empty())
+                         {
+                             JsonError(res, 400, "Missing userId");
+                             return;
+                         }
+                         auto result = dorm_alloc::service::StudentService::SubmitSceneData(client, user_id, req.body);
+                         JsonSuccess(res, result);
+                     }
+                     catch (const std::exception &e)
+                     {
+                         JsonError(res, 400, e.what());
+                     } });
+
+        // GET /api/student/match-result/:userId — path param to match frontend api/index.js
+        svr.Get(R"(/api/student/match-result/([^/]+))", [&client](const httplib::Request &req, httplib::Response &res)
+                {
+                    SetCors(res);
+                    try
+                    {
+                        std::string user_id = req.matches[1];
                         auto result = dorm_alloc::service::StudentService::GetMatchResult(client, user_id);
                         JsonSuccess(res, result);
                     }

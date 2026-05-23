@@ -63,6 +63,19 @@ namespace dorm_alloc
             // Add a dormitory.
             static std::string AddDormitory(MySqlClient &db,
                                             const std::string &dorm_json);
+
+            // Delete a user. Cannot delete self or any admin.
+            static std::string DeleteUser(MySqlClient &db,
+                                          const std::string &admin_user_id,
+                                          const std::string &target_user_id);
+
+            // Transfer admin role to another user.
+            static std::string TransferAdmin(MySqlClient &db,
+                                             const std::string &admin_user_id,
+                                             const std::string &target_user_id);
+
+            // List all users.
+            static std::string ListUsers(MySqlClient &db);
         };
 
     } // namespace service

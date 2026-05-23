@@ -8,6 +8,8 @@
 #include <nlohmann/json.hpp>
 #include <mysql/jdbc.h>
 
+#include "infrastructure/auth/CryptoUtil.h"
+
 namespace dorm_alloc
 {
     namespace service
@@ -108,13 +110,23 @@ namespace dorm_alloc
             const std::string &student_no,
             const std::string &password)
         {
+            // Look up user by student_no, retrieve stored hash and salt
             auto rs = db.ExecuteQuery(
-                "SELECT user_id, role, gender, college, major, grade, dorm_type "
+                "SELECT user_id, role, gender, college, major, grade, dorm_type, password, salt "
                 "FROM `user` "
                 "WHERE student_no = '" +
-                Escape(student_no) + "' AND password = '" + Escape(password) + "';");
+                Escape(student_no) + "';");
 
             if (!rs->next())
+            {
+                throw std::runtime_error("Invalid student number or password.");
+            }
+
+            // Verify password hash
+            std::string stored_hash = rs->getString("password").asStdString();
+            std::string salt = rs->getString("salt").asStdString();
+
+            if (!dorm_alloc::infra::auth::CryptoUtil::VerifyPassword(password, salt, stored_hash))
             {
                 throw std::runtime_error("Invalid student number or password.");
             }
@@ -593,6 +605,64 @@ namespace dorm_alloc
                                        "opposite_sex", "bad_hygiene", "over_demand",
                                        "boundary_violation", "pets"};
             return tmpl.dump();
+        }
+
+        // ---- Register ----
+        std::string StudentService::Register(
+            MySqlClient &db,
+            const std::string &register_json)
+        {
+            auto data = nlohmann::json::parse(register_json);
+
+            std::string student_no = data.value("studentNo", "");
+            std::string password = data.value("password", "");
+
+            if (student_no.empty() || password.empty())
+            {
+                throw std::runtime_error("Student number and password are required.");
+            }
+
+            // Check if student_no already exists
+            auto rs = db.ExecuteQuery(
+                "SELECT user_id FROM `user` WHERE student_no = '" +
+                Escape(student_no) + "';");
+            if (rs->next())
+            {
+                throw std::runtime_error("Student number already registered.");
+            }
+
+            // Generate user data
+            std::string user_id = GenId("u_");
+            std::string gender = data.value("gender", "");
+            std::string college = data.value("college", "");
+            std::string major = data.value("major", "");
+            std::string grade = data.value("grade", "");
+            int dorm_type = data.value("dormType", 4);
+
+            // Hash password with random salt
+            std::string salt = dorm_alloc::infra::auth::CryptoUtil::GenerateSalt();
+            std::string hashed_pw = dorm_alloc::infra::auth::CryptoUtil::HashPassword(password, salt);
+
+            std::ostringstream sql;
+            sql << "INSERT INTO `user` "
+                << "(user_id, student_no, password, salt, gender, college, major, grade, dorm_type, role) VALUES ("
+                << "'" << user_id << "', "
+                << "'" << Escape(student_no) << "', "
+                << "'" << hashed_pw << "', "
+                << "'" << salt << "', "
+                << "'" << Escape(gender) << "', "
+                << "'" << Escape(college) << "', "
+                << "'" << Escape(major) << "', "
+                << "'" << Escape(grade) << "', "
+                << dorm_type << ", "
+                << "'student');";
+            db.Execute(sql.str());
+
+            nlohmann::json result;
+            result["userId"] = user_id;
+            result["studentNo"] = student_no;
+            result["role"] = "student";
+            return result.dump();
         }
 
     } // namespace service

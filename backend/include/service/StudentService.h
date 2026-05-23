@@ -56,6 +56,12 @@ namespace dorm_alloc
             // Get questionnaire template (static placeholder).
             static std::string GetQuestionnaireTemplate();
 
+            // Student self-registration.
+            // Input JSON: { "studentNo":"...", "password":"...", "gender":"...", "college":"...", "major":"...", "grade":"..." }
+            // Returns JSON: { userId, studentNo, role }
+            static std::string Register(MySqlClient &db,
+                                        const std::string &register_json);
+
         private:
             // Generate a simple random token string.
             static std::string GenerateToken();

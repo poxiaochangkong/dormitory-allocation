@@ -9,6 +9,7 @@
 #include <mysql/jdbc.h>
 
 #include "algorithm/MatchEngine.h"
+#include "infrastructure/auth/CryptoUtil.h"
 
 namespace dorm_alloc
 {
@@ -46,14 +47,23 @@ namespace dorm_alloc
             const std::string &student_no,
             const std::string &password)
         {
+            // Look up admin by student_no, retrieve stored hash and salt
             auto rs = db.ExecuteQuery(
-                "SELECT user_id, role, gender, college, major, grade "
+                "SELECT user_id, role, gender, password, salt "
                 "FROM `user` "
                 "WHERE student_no = '" +
-                Escape(student_no) + "' AND password = '" + Escape(password) +
-                "' AND role = 'admin';");
+                Escape(student_no) + "' AND role = 'admin';");
 
             if (!rs->next())
+            {
+                throw std::runtime_error("Invalid admin credentials.");
+            }
+
+            // Verify password hash
+            std::string stored_hash = rs->getString("password").asStdString();
+            std::string salt = rs->getString("salt").asStdString();
+
+            if (!dorm_alloc::infra::auth::CryptoUtil::VerifyPassword(password, salt, stored_hash))
             {
                 throw std::runtime_error("Invalid admin credentials.");
             }
@@ -99,25 +109,35 @@ namespace dorm_alloc
             int count = 0;
             for (const auto &s : arr)
             {
-                std::string user_id = GenId("u_");
                 std::string student_no = s.value("studentNo", "");
+                std::string role = s.value("role", "student");
+
+                if (student_no.empty())
+                    continue;
+
+                // Block importing admin accounts — system must have exactly one admin
+                if (role == "admin")
+                    continue;
+
+                std::string user_id = GenId("u_");
                 std::string gender = s.value("gender", "");
                 std::string college = s.value("college", "");
                 std::string major = s.value("major", "");
                 std::string grade = s.value("grade", "");
                 int dorm_type = s.value("dormType", 4);
-                std::string role = s.value("role", "student");
-                std::string password = s.value("password", "123456");
+                std::string raw_password = s.value("password", "123456");
 
-                if (student_no.empty())
-                    continue;
+                // Hash the password with a random salt
+                std::string salt = dorm_alloc::infra::auth::CryptoUtil::GenerateSalt();
+                std::string hashed_pw = dorm_alloc::infra::auth::CryptoUtil::HashPassword(raw_password, salt);
 
                 std::ostringstream sql;
                 sql << "INSERT INTO `user` "
-                    << "(user_id, student_no, password, gender, college, major, grade, dorm_type, role) VALUES ("
+                    << "(user_id, student_no, password, salt, gender, college, major, grade, dorm_type, role) VALUES ("
                     << "'" << user_id << "', "
                     << "'" << Escape(student_no) << "', "
-                    << "'" << Escape(password) << "', "
+                    << "'" << hashed_pw << "', "
+                    << "'" << salt << "', "
                     << "'" << Escape(gender) << "', "
                     << "'" << Escape(college) << "', "
                     << "'" << Escape(major) << "', "
@@ -135,6 +155,124 @@ namespace dorm_alloc
 
             nlohmann::json result;
             result["imported"] = count;
+            return result.dump();
+        }
+
+        // ---- DeleteUser ----
+        // Admin deletes a user. Cannot delete self or any admin.
+        std::string AdminService::DeleteUser(
+            MySqlClient &db,
+            const std::string &admin_user_id,
+            const std::string &target_user_id)
+        {
+            if (admin_user_id == target_user_id)
+            {
+                throw std::runtime_error("Cannot delete your own account.");
+            }
+
+            // Verify target exists and is not admin
+            auto rs = db.ExecuteQuery(
+                "SELECT user_id, role FROM `user` WHERE user_id = '" +
+                Escape(target_user_id) + "';");
+
+            if (!rs->next())
+            {
+                throw std::runtime_error("User not found: " + target_user_id);
+            }
+
+            std::string role = rs->getString("role").asStdString();
+            if (role == "admin")
+            {
+                throw std::runtime_error("Cannot delete admin account.");
+            }
+
+            // Delete related records first (foreign key constraints)
+            db.Execute("DELETE FROM match_result WHERE user_id = '" + Escape(target_user_id) + "';");
+            db.Execute("DELETE FROM veto WHERE user_id = '" + Escape(target_user_id) + "';");
+            db.Execute("DELETE FROM preference WHERE user_id = '" + Escape(target_user_id) + "';");
+            db.Execute("DELETE FROM open_text_profile WHERE user_id = '" + Escape(target_user_id) + "';");
+            db.Execute("DELETE FROM questionnaire WHERE user_id = '" + Escape(target_user_id) + "';");
+            db.Execute("DELETE FROM `user` WHERE user_id = '" + Escape(target_user_id) + "';");
+
+            nlohmann::json result;
+            result["deleted"] = true;
+            result["userId"] = target_user_id;
+            return result.dump();
+        }
+
+        // ---- TransferAdmin ----
+        // Transfer admin role to another user. Current admin becomes student.
+        std::string AdminService::TransferAdmin(
+            MySqlClient &db,
+            const std::string &admin_user_id,
+            const std::string &target_user_id)
+        {
+            if (admin_user_id == target_user_id)
+            {
+                throw std::runtime_error("Cannot transfer admin to yourself.");
+            }
+
+            // Verify target exists and is a student
+            auto rs = db.ExecuteQuery(
+                "SELECT user_id, role FROM `user` WHERE user_id = '" +
+                Escape(target_user_id) + "';");
+
+            if (!rs->next())
+            {
+                throw std::runtime_error("Target user not found: " + target_user_id);
+            }
+
+            // Demote current admin to student
+            db.Execute(
+                "UPDATE `user` SET role = 'student', token = NULL "
+                "WHERE user_id = '" +
+                Escape(admin_user_id) + "';");
+
+            // Promote target to admin
+            db.Execute(
+                "UPDATE `user` SET role = 'admin' "
+                "WHERE user_id = '" +
+                Escape(target_user_id) + "';");
+
+            nlohmann::json result;
+            result["transferred"] = true;
+            result["newAdminUserId"] = target_user_id;
+            return result.dump();
+        }
+
+        // ---- ListUsers ----
+        // List all student users (admin can view all students)
+        std::string AdminService::ListUsers(MySqlClient &db)
+        {
+            auto rs = db.ExecuteQuery(
+                "SELECT user_id, student_no, gender, college, major, grade, dorm_type, role, created_at "
+                "FROM `user` ORDER BY created_at DESC;");
+
+            nlohmann::json users = nlohmann::json::array();
+            while (rs->next())
+            {
+                nlohmann::json u;
+                u["userId"] = rs->getString("user_id").asStdString();
+                u["studentNo"] = rs->getString("student_no").asStdString();
+                u["gender"] = rs->getString("gender").asStdString();
+                u["college"] = rs->getString("college").asStdString();
+                u["major"] = rs->getString("major").asStdString();
+                u["grade"] = rs->getString("grade").asStdString();
+                u["dormType"] = rs->getInt("dorm_type");
+                u["role"] = rs->getString("role").asStdString();
+                if (!rs->isNull("created_at"))
+                {
+                    u["createdAt"] = rs->getString("created_at").asStdString();
+                }
+                else
+                {
+                    u["createdAt"] = "";
+                }
+                users.push_back(u);
+            }
+
+            nlohmann::json result;
+            result["users"] = users;
             return result.dump();
         }
 

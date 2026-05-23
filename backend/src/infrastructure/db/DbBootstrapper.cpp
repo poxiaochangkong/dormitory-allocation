@@ -1,9 +1,10 @@
-// 此文件由工具自动生成，请勿修改
 #include "infrastructure/db/DbBootstrapper.h"
 
 #include <mysql/jdbc.h>
+#include <sstream>
 
 #include "infrastructure/db/MySqlClient.h"
+#include "infrastructure/auth/CryptoUtil.h"
 
 namespace dorm_alloc
 {
@@ -25,15 +26,16 @@ namespace dorm_alloc
 
             void DbBootstrapper::EnsureTablesExist(MySqlClient &client)
             {
-                // 1. user table
+                // 1. user table (password stores SHA-256 hash, salt stores per-user random salt)
                 client.Execute(
                     "CREATE TABLE IF NOT EXISTS `user` ("
                     "  user_id VARCHAR(64) PRIMARY KEY,"
                     "  student_no VARCHAR(32) NOT NULL UNIQUE,"
-                    "  password VARCHAR(128) NOT NULL DEFAULT '123456',"
-                    "  gender VARCHAR(16) NOT NULL,"
-                    "  college VARCHAR(64) NOT NULL,"
-                    "  major VARCHAR(64) NOT NULL,"
+                    "  password VARCHAR(128) NOT NULL,"
+                    "  salt VARCHAR(64) NOT NULL DEFAULT '',"
+                    "  gender VARCHAR(16) NOT NULL DEFAULT '',"
+                    "  college VARCHAR(64) NOT NULL DEFAULT '',"
+                    "  major VARCHAR(64) NOT NULL DEFAULT '',"
                     "  grade VARCHAR(16),"
                     "  dorm_type INT DEFAULT 4,"
                     "  role VARCHAR(16) NOT NULL DEFAULT 'student',"
@@ -41,6 +43,26 @@ namespace dorm_alloc
                     "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
                     "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
                     ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;");
+
+                // Ensure salt column exists for databases created before this migration
+                try
+                {
+                    client.Execute("ALTER TABLE `user` ADD COLUMN salt VARCHAR(64) NOT NULL DEFAULT '' AFTER password;");
+                }
+                catch (const std::exception &)
+                {
+                    // Column already exists — ignore
+                }
+
+                // Ensure token column exists for databases created before this migration
+                try
+                {
+                    client.Execute("ALTER TABLE `user` ADD COLUMN token VARCHAR(128) AFTER role;");
+                }
+                catch (const std::exception &)
+                {
+                    // Column already exists — ignore
+                }
 
                 // 2. questionnaire table
                 client.Execute(
@@ -160,22 +182,52 @@ namespace dorm_alloc
                 }
 
                 // Seed default admin account if no admin exists.
-                // This ensures the system is usable immediately after bootstrap.
+                // Ensures exactly one admin with hashed password.
+                // Default credentials: admin / admin123
                 try
                 {
                     auto rs = client.ExecuteQuery(
                         "SELECT COUNT(*) AS cnt FROM `user` WHERE role = 'admin';");
                     if (rs->next() && rs->getInt("cnt") == 0)
                     {
-                        client.Execute(
-                            "INSERT INTO `user`"
-                            "  (user_id, student_no, password, gender, college, major, grade, role)"
-                            "  VALUES ('admin_001', 'admin', 'admin123', 'male', 'System', 'Admin', '2024', 'admin');");
+                        std::string admin_salt = dorm_alloc::infra::auth::CryptoUtil::GenerateSalt();
+                        std::string admin_hash = dorm_alloc::infra::auth::CryptoUtil::HashPassword("admin123", admin_salt);
+                        std::ostringstream sql;
+                        sql << "INSERT INTO `user`"
+                            << "  (user_id, student_no, password, salt, gender, college, major, grade, role)"
+                            << "  VALUES ('admin_001', 'admin', '"
+                            << admin_hash << "', '"
+                            << admin_salt << "', "
+                            << "'male', 'System', 'Admin', '2024', 'admin');";
+                        client.Execute(sql.str());
                     }
                 }
                 catch (const std::exception &)
                 {
                     // Seed insertion failed (e.g. duplicate key) — ignore
+                }
+
+                // Migrate existing admin password from plaintext to hashed if needed.
+                // Old versions stored plaintext password with empty salt.
+                try
+                {
+                    auto rs = client.ExecuteQuery(
+                        "SELECT user_id, salt FROM `user` WHERE role = 'admin' AND (salt IS NULL OR salt = '');");
+                    if (rs->next())
+                    {
+                        std::string uid = rs->getString("user_id").asStdString();
+                        std::string new_salt = dorm_alloc::infra::auth::CryptoUtil::GenerateSalt();
+                        std::string new_hash = dorm_alloc::infra::auth::CryptoUtil::HashPassword("admin123", new_salt);
+                        std::ostringstream sql;
+                        sql << "UPDATE `user` SET password = '" << new_hash
+                            << "', salt = '" << new_salt
+                            << "' WHERE user_id = '" << uid << "';";
+                        client.Execute(sql.str());
+                    }
+                }
+                catch (const std::exception &)
+                {
+                    // Migration failed — ignore
                 }
             }
 

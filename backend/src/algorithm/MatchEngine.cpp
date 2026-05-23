@@ -386,13 +386,15 @@ namespace dorm_alloc
                 dorm_idx++;
             }
 
-            // Handle remaining unassigned students - put them in remaining dorms
+            // Handle remaining unassigned students - put them in dorms with space
             for (size_t i = 0; i < n; ++i)
             {
                 if (!assigned[i])
                 {
                     // Find a dorm that still has space
-                    std::string dorm_id = "unassigned";
+                    std::string dorm_id;
+                    std::string dorm_building;
+                    std::string dorm_room;
                     for (const auto &dorm : dorms)
                     {
                         // Check if this dorm already has less than capacity members
@@ -405,8 +407,18 @@ namespace dorm_alloc
                         if (count < dorm.capacity)
                         {
                             dorm_id = dorm.dorm_id;
+                            dorm_building = dorm.building;
+                            dorm_room = dorm.room_number;
                             break;
                         }
+                    }
+
+                    // If all dorms are full, use the last dorm (overflow)
+                    if (dorm_id.empty() && !dorms.empty())
+                    {
+                        dorm_id = dorms.back().dorm_id;
+                        dorm_building = dorms.back().building;
+                        dorm_room = dorms.back().room_number;
                     }
 
                     AllocationResult r;
@@ -414,7 +426,19 @@ namespace dorm_alloc
                     r.user_id = students[i].user_id;
                     r.dorm_id = dorm_id;
                     r.total_score = 0.0;
-                    r.explanation_text = "Assigned as remaining student (no optimal match found).";
+
+                    // Generate explanation with actual dorm info
+                    std::ostringstream expl;
+                    if (!dorm_building.empty())
+                    {
+                        expl << "Assigned to " << dorm_building << " " << dorm_room
+                             << " as remaining student (no optimal match found).";
+                    }
+                    else
+                    {
+                        expl << "Assigned as remaining student (no dorm available).";
+                    }
+                    r.explanation_text = expl.str();
                     results.push_back(std::move(r));
                 }
             }

@@ -3,8 +3,10 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <sstream>
 
 #include <httplib.h>
+#include <mysql/jdbc.h>
 #include <nlohmann/json.hpp>
 
 #include "infrastructure/config/AppConfig.h"
@@ -43,6 +45,45 @@ static void SetCors(httplib::Response &res)
     res.set_header("Access-Control-Allow-Origin", "*");
     res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.set_header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
+// Helper: authenticate request via Bearer token.
+// Returns {userId, role} on success, or empty optional on failure.
+struct AuthInfo
+{
+    std::string userId;
+    std::string role;
+};
+
+static bool AuthenticateRequest(MySqlClient &db, const httplib::Request &req, AuthInfo &out)
+{
+    // Look for Authorization: Bearer <token>
+    std::string auth_header = req.get_header_value("Authorization");
+    const std::string prefix = "Bearer ";
+    if (auth_header.size() <= prefix.size() ||
+        auth_header.substr(0, prefix.size()) != prefix)
+    {
+        return false;
+    }
+    std::string token = auth_header.substr(prefix.size());
+
+    // Query database for token
+    try
+    {
+        std::ostringstream sql;
+        sql << "SELECT user_id, role FROM `user` WHERE token = '" << token << "';";
+        auto rs = db.ExecuteQuery(sql.str());
+        if (rs->next())
+        {
+            out.userId = rs->getString("user_id").asStdString();
+            out.role = rs->getString("role").asStdString();
+            return true;
+        }
+    }
+    catch (const std::exception &)
+    {
+    }
+    return false;
 }
 
 int main(int argc, char **argv)
@@ -181,6 +222,20 @@ int main(int argc, char **argv)
                              return;
                          }
                          auto result = dorm_alloc::service::StudentService::SubmitSceneData(client, user_id, req.body);
+                         JsonSuccess(res, result);
+                     }
+                     catch (const std::exception &e)
+                     {
+                         JsonError(res, 400, e.what());
+                     } });
+
+        // POST /api/student/register — student self-registration (no auth required)
+        svr.Post("/api/student/register", [&client](const httplib::Request &req, httplib::Response &res)
+                 {
+                     SetCors(res);
+                     try
+                     {
+                         auto result = dorm_alloc::service::StudentService::Register(client, req.body);
                          JsonSuccess(res, result);
                      }
                      catch (const std::exception &e)
@@ -366,6 +421,74 @@ int main(int argc, char **argv)
                      {
                          JsonError(res, 400, e.what());
                      } });
+
+        // DELETE /api/admin/users/:userId — admin deletes a user (requires auth)
+        svr.Delete(R"(/api/admin/users/([^/]+))", [&client](const httplib::Request &req, httplib::Response &res)
+                   {
+                       SetCors(res);
+                       try
+                       {
+                           AuthInfo auth;
+                           if (!AuthenticateRequest(client, req, auth) || auth.role != "admin")
+                           {
+                               JsonError(res, 401, "Unauthorized: admin access required.");
+                               return;
+                           }
+                           std::string target_id = req.matches[1];
+                           auto result = dorm_alloc::service::AdminService::DeleteUser(client, auth.userId, target_id);
+                           JsonSuccess(res, result);
+                       }
+                       catch (const std::exception &e)
+                       {
+                           JsonError(res, 400, e.what());
+                       } });
+
+        // POST /api/admin/transfer — transfer admin role (requires auth)
+        svr.Post("/api/admin/transfer", [&client](const httplib::Request &req, httplib::Response &res)
+                 {
+                     SetCors(res);
+                     try
+                     {
+                         AuthInfo auth;
+                         if (!AuthenticateRequest(client, req, auth) || auth.role != "admin")
+                         {
+                             JsonError(res, 401, "Unauthorized: admin access required.");
+                             return;
+                         }
+                         auto body = nlohmann::json::parse(req.body);
+                         std::string target_id = body.value("targetUserId", "");
+                         if (target_id.empty())
+                         {
+                             JsonError(res, 400, "Missing targetUserId");
+                             return;
+                         }
+                         auto result = dorm_alloc::service::AdminService::TransferAdmin(client, auth.userId, target_id);
+                         JsonSuccess(res, result);
+                     }
+                     catch (const std::exception &e)
+                     {
+                         JsonError(res, 400, e.what());
+                     } });
+
+        // GET /api/admin/users — list all users (requires auth)
+        svr.Get("/api/admin/users", [&client](const httplib::Request &req, httplib::Response &res)
+                {
+                    SetCors(res);
+                    try
+                    {
+                        AuthInfo auth;
+                        if (!AuthenticateRequest(client, req, auth) || auth.role != "admin")
+                        {
+                            JsonError(res, 401, "Unauthorized: admin access required.");
+                            return;
+                        }
+                        auto result = dorm_alloc::service::AdminService::ListUsers(client);
+                        JsonSuccess(res, result);
+                    }
+                    catch (const std::exception &e)
+                    {
+                        JsonError(res, 400, e.what());
+                    } });
 
         std::cout << "[server] listening on " << cfg.http.host << ":" << cfg.http.port << std::endl;
         svr.listen(cfg.http.host.c_str(), cfg.http.port);

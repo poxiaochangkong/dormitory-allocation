@@ -49,6 +49,7 @@ frontend-matching/*.sln
 frontend-matching/*.sw?
 
 # Keep documentation files
+!bug_report.md
 !系统设计说明书.docx
 !需求分析.md
 !readme.md

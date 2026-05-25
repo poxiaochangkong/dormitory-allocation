@@ -52,8 +52,10 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { submitSceneData } from '../api'
 
 const router = useRouter()
+const submitting = ref(false)
 
 // 存储沉浸式场景答案
 const answers = reactive({
@@ -69,7 +71,7 @@ const questionBank = {
   ac: { key: 's30_acTemp', title: '❄️ 空调偏好', desc: '夏天你最习惯的温度是多少度？', type: 'slider', min: 16, max: 30 },
   bed: { key: 's31_bedAction', title: '🛏️ 作息动作', desc: '若室友在睡觉，你进入宿舍的动作是？', type: 'radio', options: [{ val: 'A', text: '轻手轻脚，尽量无声' }, { val: 'B', text: '正常进出，稍微注意' }, { val: 'C', text: '不刻意改变节奏' }] },
   desk: { key: 's32_deskState', title: '📚 桌面状态', desc: '你的桌面通常呈现哪种状态？', type: 'radio', options: [{ val: 'A', text: '极简空旷' }, { val: 'B', text: '乱中有序' }, { val: 'C', text: '自由发挥' }] },
-  door: { key: 's33_doorKnock', title: '🚪 敲门态度', desc: '对“未敲门直接借东西”的室友态度是？', type: 'radio', options: [{ val: 'A', text: '完全无所谓' }, { val: 'B', text: '可以接受，但最好敲门' }, { val: 'C', text: '非常反感' }] },
+  door: { key: 's33_doorKnock', title: '🚪 敲门态度', desc: '对"未敲门直接借东西"的室友态度是？', type: 'radio', options: [{ val: 'A', text: '完全无所谓' }, { val: 'B', text: '可以接受，但最好敲门' }, { val: 'C', text: '非常反感' }] },
   curtain: { key: 's34_curtain', title: '🪟 窗帘采光', desc: '白天你希望宿舍保持什么状态？', type: 'radio', options: [{ val: 'A', text: '拉开窗帘保持通透' }, { val: 'B', text: '无所谓' }, { val: 'C', text: '喜欢常年拉窗帘' }] },
   trash: { key: 's35_trash', title: '🗑️ 垃圾处理', desc: '垃圾满了但没轮到你值日，你会？', type: 'radio', options: [{ val: 'A', text: '随手带走' }, { val: 'B', text: '提醒值日生' }, { val: 'C', text: '视而不见' }] },
   wash: { key: 's36_wash', title: '🚰 洗漱时长', desc: '你早晚洗漱占用台面的时间大约是？', type: 'radio', options: [{ val: 'A', text: '5分钟内' }, { val: 'B', text: '10-15分钟' }, { val: 'C', text: '半小时以上' }] },
@@ -80,10 +82,29 @@ const questionBank = {
 const openQuestion = (item) => { currentQ.value = questionBank[item]; dialogVisible.value = true }
 const saveAnswer = () => { dialogVisible.value = false; ElMessage.success('记录成功！') }
 
-const finishScene = () => {
-  console.log('沉浸式问卷最终数据：', answers)
-  ElMessage.success('正在为您执行全局匹配算法...')
-  setTimeout(() => { router.push('/student/result') }, 2000)
+const finishScene = async () => {
+  const userId = localStorage.getItem('userId')
+  if (!userId) {
+    ElMessage.error('未检测到登录信息，请重新登录')
+    router.push('/login')
+    return
+  }
+
+  submitting.value = true
+  try {
+    // Submit scene data to backend
+    await submitSceneData({
+      userId: userId,
+      ...answers
+    })
+
+    ElMessage.success('正在为您执行全局匹配算法...')
+    setTimeout(() => { router.push('/student/result') }, 2000)
+  } catch (err) {
+    console.error('Submit scene data failed:', err)
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 

@@ -1,13 +1,10 @@
 <!-- AdminAdjust.vue -->
 <!-- 
   管理员控制台 - 人工微调与风险重估
-  这是一个专门为管理员设计的界面，允许他们在系统自动分配后对学生进行人工调整。
-  亮点功能：
-    - 拖拽式界面：管理员可以通过拖拽学生卡片来调整分配结果，操作直观便捷。
-    - 实时风险评估：每次调整都会触发系统的风险评估机制，实时计算并展示潜在的违规风险。
-    - 一票否决预警：如果调整涉及到高危习惯的学生，系统会立即弹出一票否决风险警告，提醒管理员可能引发的宿舍矛盾。
-    - 风险分数动态更新：根据调整后的组合，系统会动态更新风险分数，并提供详细的风险分析报告，帮助管理员做出更明智的决策。
---> 
+  - 拖拽学生卡片调整分配
+  - 调用后端 API 提交调整结果
+  - 实时显示一票否决风险预警
+-->
 <template>
   <div class="adjust-container">
     <el-card class="box-card">
@@ -19,98 +16,185 @@
         <p class="subtitle">拖拽学生卡片进行强制调宿，系统将实时计算违规风险。</p>
       </template>
 
-      <el-row :gutter="30">
-        <el-col :span="10">
-          <div class="pool-header">
-            <h3>📋 待处理异常学生池</h3>
-            <el-tag type="info">{{ unassigned.length }} 人</el-tag>
-          </div>
-          <draggable
-            v-model="unassigned"
-            group="students"
-            item-key="id"
-            class="drag-area"
-            animation="200"
-          >
-            <template #item="{ element }">
-              <div class="student-card warning-card">
-                <div class="card-info">
-                  <strong>{{ element.name }}</strong> ({{ element.major }})
-                  <p class="trait-tag">⚠️ 习惯标签：{{ element.trait }}</p>
-                </div>
-              </div>
-            </template>
-          </draggable>
-        </el-col>
+      <div v-if="loading" style="text-align: center; padding: 60px 0;">
+        <el-icon class="is-loading" :size="30"><Loading /></el-icon>
+        <p style="color: #909399; margin-top: 10px;">加载分配数据...</p>
+      </div>
 
-        <el-col :span="10">
-          <div class="pool-header">
-            <h3>🏠 目标宿舍：南苑 4 栋 302</h3>
-            <el-tag type="success">当前契合度：极高</el-tag>
-          </div>
-          <draggable
-            v-model="dorm302"
-            group="students"
-            item-key="id"
-            class="drag-area dorm-area"
-            animation="200"
-            @add="onAddStudent"
-          >
-            <template #item="{ element }">
-              <div class="student-card safe-card">
-                <div class="card-info">
-                  <strong>{{ element.name }}</strong> ({{ element.major }})
-                  <p class="trait-tag">✅ 习惯标签：{{ element.trait }}</p>
+      <template v-else>
+        <el-row :gutter="30">
+          <el-col :span="10">
+            <div class="pool-header">
+              <h3>📋 待处理学生池</h3>
+              <el-tag type="info">{{ unassigned.length }} 人</el-tag>
+            </div>
+            <draggable
+              v-model="unassigned"
+              group="students"
+              item-key="id"
+              class="drag-area"
+              animation="200"
+            >
+              <template #item="{ element }">
+                <div class="student-card warning-card">
+                  <div class="card-info">
+                    <strong>{{ element.name || element.studentNo }}</strong>
+                    <span v-if="element.major"> ({{ element.major }})</span>
+                    <p v-if="element.trait" class="trait-tag">⚠️ {{ element.trait }}</p>
+                  </div>
                 </div>
-              </div>
-            </template>
-          </draggable>
-        </el-col>
-      </el-row>
+              </template>
+            </draggable>
+          </el-col>
+
+          <el-col :span="10">
+            <div class="pool-header">
+              <h3>🏠 目标宿舍：{{ currentDormLabel }}</h3>
+              <el-tag type="success">当前 {{ dormStudents.length }} 人</el-tag>
+            </div>
+            <draggable
+              v-model="dormStudents"
+              group="students"
+              item-key="id"
+              class="drag-area dorm-area"
+              animation="200"
+              @add="onAddStudent"
+            >
+              <template #item="{ element }">
+                <div class="student-card safe-card">
+                  <div class="card-info">
+                    <strong>{{ element.name || element.studentNo }}</strong>
+                    <span v-if="element.major"> ({{ element.major }})</span>
+                    <p v-if="element.trait" class="trait-tag">✅ {{ element.trait }}</p>
+                  </div>
+                </div>
+              </template>
+            </draggable>
+          </el-col>
+        </el-row>
+
+        <div style="text-align: center; margin-top: 20px;">
+          <el-button type="success" size="large" @click="submitAdjust" :loading="submitting">
+            保存调整结果
+          </el-button>
+        </div>
+      </template>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import draggable from 'vuedraggable'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElNotification } from 'element-plus'
+import { Loading } from '@element-plus/icons-vue'
+import draggable from 'vuedraggable'
+import { getTaskResult, adjustDormitory } from '../api'
 
-// 模拟数据：待分配池的学生（带有高危习惯）
-const unassigned = ref([
-  { id: 101, name: '李雷', major: '软件工程', trait: '深夜开麦打游戏、外放' },
-  { id: 102, name: '陈晨', major: '计算机科学', trait: '长期不洗澡、卫生差' }
-])
+const router = useRouter()
+const route = useRoute()
+const loading = ref(true)
+const submitting = ref(false)
+const taskId = ref('')
+const currentDormLabel = ref('选择宿舍')
 
-// 模拟数据：302宿舍原有的好学生
-const dorm302 = ref([
-  { id: 201, name: '张三', major: '软件工程', trait: '极度怕吵、早睡早起' },
-  { id: 202, name: '王五', major: '软件工程', trait: '轻度洁癖、喜静' }
-])
+// Students to be assigned
+const unassigned = ref([])
+// Students already in the target dorm
+const dormStudents = ref([])
 
-// 监听拖拽放入宿舍的动作
-const onAddStudent = (evt) => {
-  const addedStudent = dorm302.value[evt.newIndex]
-  
-  // 核心亮点：触发一票否决拦截预警
-  if (addedStudent.name === '李雷') {
-    ElNotification({
-      title: '🚨 一票否决风险警告',
-      message: `检测到【李雷】(深夜打游戏) 与 302宿舍原成员【张三】(极度怕吵) 存在一票否决冲突！强行分配将极大概率引发宿舍矛盾！`,
-      type: 'error',
-      duration: 6000
-    })
-  } else if (addedStudent.name === '陈晨') {
-    ElNotification({
-      title: '🚨 卫生习惯冲突预警',
-      message: `检测到【陈晨】(卫生差) 与成员【王五】(洁癖) 严重不合，风险分数激增！`,
-      type: 'warning',
-      duration: 6000
-    })
-  } else {
-    ElMessage.success(`已成功将【${addedStudent.name}】调整至 302 宿舍。`)
+// Load task result data
+const loadData = async () => {
+  taskId.value = route.query.taskId || ''
+  if (!taskId.value) {
+    ElMessage.warning('未指定任务，请从管理面板进入')
+    loading.value = false
+    return
+  }
+
+  try {
+    const data = await getTaskResult(taskId.value)
+    const results = Array.isArray(data) ? data : (data ? [data] : [])
+
+    // Populate unassigned pool with result data
+    if (results.length > 0) {
+      const allStudents = []
+      results.forEach(r => {
+        if (r.userIds && Array.isArray(r.userIds)) {
+          r.userIds.forEach(uid => {
+            allStudents.push({
+              id: uid,
+              userId: uid,
+              studentNo: uid,
+              name: uid,
+              major: '',
+              trait: '',
+              originalDorm: r.dormId
+            })
+          })
+        }
+      })
+      unassigned.value = allStudents
+      // Use first dorm as default target
+      if (results[0] && results[0].dormId) {
+        currentDormLabel.value = results[0].dormId
+      }
+    }
+  } catch (err) {
+    console.error('Load task result failed:', err)
+  } finally {
+    loading.value = false
   }
 }
+
+// Handle student added to dorm
+const onAddStudent = (evt) => {
+  const addedStudent = dormStudents.value[evt.newIndex]
+  ElMessage.success(`已将学生调整至宿舍`)
+}
+
+// Submit adjustment to backend
+const submitAdjust = async () => {
+  submitting.value = true
+  try {
+    const assignments = dormStudents.value.map(s => ({
+      userId: s.userId || s.id,
+      dormId: currentDormLabel.value
+    }))
+
+    if (assignments.length === 0) {
+      ElMessage.warning('请先将学生拖入宿舍')
+      submitting.value = false
+      return
+    }
+
+    await adjustDormitory({
+      taskId: taskId.value,
+      assignments: assignments
+    })
+
+    ElNotification({
+      title: '调整成功',
+      message: `已成功调整 ${assignments.length} 名学生的宿舍分配`,
+      type: 'success',
+      duration: 3000
+    })
+  } catch (err) {
+    console.error('Adjust failed:', err)
+  } finally {
+    submitting.value = false
+  }
+}
+
+onMounted(() => {
+  const role = localStorage.getItem('role')
+  if (role !== 'admin') {
+    ElMessage.error('请以管理员身份登录')
+    router.push('/login')
+    return
+  }
+  loadData()
+})
 </script>
 
 <style scoped>
@@ -123,11 +207,11 @@ const onAddStudent = (evt) => {
 .pool-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #ebeef5; padding-bottom: 10px;}
 .pool-header h3 { margin: 0; color: #409EFF; }
 
-/* 拖拽区域 */
+/* Drag areas */
 .drag-area { min-height: 400px; padding: 15px; background: #fafafa; border-radius: 8px; border: 1px dashed #dcdfe6; }
 .dorm-area { background: #f0f9eb; border: 1px dashed #e1f3d8; }
 
-/* 卡片样式 */
+/* Card styles */
 .student-card { padding: 15px; margin-bottom: 15px; background: white; border-radius: 6px; cursor: grab; transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
 .student-card:active { cursor: grabbing; transform: scale(1.02); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 .warning-card { border-left: 5px solid #F56C6C; }

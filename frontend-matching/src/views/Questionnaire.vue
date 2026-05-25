@@ -168,9 +168,11 @@
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { submitQuestionnaire } from '../api'
 
 const router = useRouter()
 const activeNames = ref(['1', '2', '3', '4']) // 默认展开所有
+const submitting = ref(false)
 
 const form = reactive({
   basicInfo: { gender: '', college: '', major: '' },
@@ -179,12 +181,39 @@ const form = reactive({
   personality: { p21_mbti: '', p22_socialEnergy: '', p23_idealRelation: '', p26_plan: '', p28_rules: '' }
 })
 
-const submitForm = () => {
-  console.log('提交的基础问卷数据：', form)
-  ElMessage.success('基础画像已保存！请继续完成第二阶段。')
-  setTimeout(() => {
-    router.push('/student/home') // 保存后退回大厅
-  }, 1000)
+const submitForm = async () => {
+  const userId = localStorage.getItem('userId')
+  if (!userId) {
+    ElMessage.error('未检测到登录信息，请重新登录')
+    router.push('/login')
+    return
+  }
+
+  // Validate required fields
+  if (!form.traditionalHabits.q02_sleepTime) {
+    return ElMessage.warning('请选择入睡时间')
+  }
+
+  submitting.value = true
+  try {
+    // Send data to backend with userId
+    await submitQuestionnaire({
+      userId: userId,
+      basicInfo: form.basicInfo,
+      traditionalHabits: form.traditionalHabits,
+      vetoSettings: form.vetoSettings,
+      personality: form.personality
+    })
+
+    ElMessage.success('基础画像已保存！请继续完成第二阶段。')
+    setTimeout(() => {
+      router.push('/student/home')
+    }, 1000)
+  } catch (err) {
+    console.error('Submit questionnaire failed:', err)
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 

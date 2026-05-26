@@ -8,7 +8,10 @@
       <template #header>
         <div class="card-header">
           <h2>📝 基础画像与底线红线设置</h2>
-          <el-button type="primary" plain @click="$router.push('/student/home')">返回大厅</el-button>
+          <div>
+            <el-button type="primary" plain @click="$router.push('/student/home')">返回大厅</el-button>
+            <el-button type="danger" plain @click="handleLogout">退出登录</el-button>
+          </div>
         </div>
       </template>
 
@@ -172,6 +175,14 @@ import { submitQuestionnaire } from '../api'
 
 const router = useRouter()
 const activeNames = ref(['1', '2', '3', '4']) // 默认展开所有
+
+// Logout: clear session and return to login page
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('userId')
+  localStorage.removeItem('role')
+  router.push('/login')
+}
 const submitting = ref(false)
 
 const form = reactive({

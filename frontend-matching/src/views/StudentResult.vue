@@ -12,7 +12,10 @@
       <template #header>
         <div class="header-box">
           <h2>🎉 您的宿舍分配结果已出炉</h2>
-          <el-button type="primary" plain @click="$router.push('/student/home')">返回大厅</el-button>
+          <div>
+            <el-button type="primary" plain @click="$router.push('/student/home')">返回大厅</el-button>
+            <el-button type="danger" plain @click="handleLogout">退出登录</el-button>
+          </div>
         </div>
       </template>
 
@@ -89,6 +92,14 @@ use([RadarChart, TitleComponent, TooltipComponent, LegendComponent, CanvasRender
 const router = useRouter()
 const loading = ref(true)
 const result = ref(null)
+
+// Logout: clear session and return to login page
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('userId')
+  localStorage.removeItem('role')
+  router.push('/login')
+}
 
 // Compute match level based on total score
 const matchLevel = computed(() => {

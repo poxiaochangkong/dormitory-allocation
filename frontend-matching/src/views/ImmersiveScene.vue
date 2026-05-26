@@ -5,7 +5,11 @@
       <template #header>
         <div class="header-box">
           <h2>🏠 沉浸式生活习惯采集</h2>
-          <el-button type="primary" plain @click="$router.push('/student/questionnaire')">切换至传统列表模式</el-button>
+          <div>
+            <el-button type="primary" plain @click="$router.push('/student/questionnaire')">切换至传统列表模式</el-button>
+            <el-button plain @click="$router.push('/student/home')">返回大厅</el-button>
+            <el-button type="danger" plain @click="handleLogout">退出登录</el-button>
+          </div>
         </div>
         <p class="subtitle">请点击房间内的 9 个闪烁标记，完成最终场景画像</p>
       </template>
@@ -56,6 +60,14 @@ import { submitSceneData } from '../api'
 
 const router = useRouter()
 const submitting = ref(false)
+
+// Logout: clear session and return to login page
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('userId')
+  localStorage.removeItem('role')
+  router.push('/login')
+}
 
 // 存储沉浸式场景答案
 const answers = reactive({

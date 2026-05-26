@@ -76,29 +76,20 @@
     <el-dialog v-model="showCreateDialog" title="创建分配任务" width="500px">
       <el-form label-position="top">
         <el-form-item label="任务名称">
-          <el-input v-model="newTask.name" placeholder="如：计算机学院2026级分配" />
+          <el-input v-model="newTask.taskName" placeholder="如：计算机学院2026级分配" />
         </el-form-item>
         <el-form-item label="目标学院">
           <el-input v-model="newTask.college" placeholder="如：计算机学院" />
         </el-form-item>
-        <el-form-item label="匹配算法权重">
-          <el-row :gutter="10">
-            <el-col :span="8">
-              <el-input v-model.number="newTask.similarityWeight" placeholder="相似度">
-                <template #prepend>相似</template>
-              </el-input>
-            </el-col>
-            <el-col :span="8">
-              <el-input v-model.number="newTask.complementarityWeight" placeholder="互补度">
-                <template #prepend>互补</template>
-              </el-input>
-            </el-col>
-            <el-col :span="8">
-              <el-input v-model.number="newTask.vetoSafetyWeight" placeholder="安全度">
-                <template #prepend>安全</template>
-              </el-input>
-            </el-col>
-          </el-row>
+        <el-form-item label="目标专业">
+          <el-input v-model="newTask.major" placeholder="如：软件工程（留空表示全部专业）" />
+        </el-form-item>
+        <el-form-item label="性别限制">
+          <el-select v-model="newTask.gender" placeholder="请选择" style="width: 100%;">
+            <el-option label="不限" value="" />
+            <el-option label="男" value="male" />
+            <el-option label="女" value="female" />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -107,16 +98,18 @@
       </template>
     </el-dialog>
 
-    <!-- Task result dialog -->
-    <el-dialog v-model="showResultDialog" title="分配结果" width="700px">
+    <!-- Task result dialog — displays flat per-student allocation rows from backend -->
+    <el-dialog v-model="showResultDialog" :title="'分配结果 — ' + resultTaskName" width="800px">
       <el-table :data="taskResults" style="width: 100%" max-height="400">
-        <el-table-column prop="dormId" label="宿舍" width="150" />
-        <el-table-column prop="userIds" label="分配学生" />
+        <el-table-column prop="studentNo" label="学号" width="140" />
+        <el-table-column prop="building" label="楼栋" width="100" />
+        <el-table-column prop="roomNumber" label="房间号" width="100" />
         <el-table-column prop="totalScore" label="匹配分" width="100">
           <template #default="scope">
             {{ (scope.row.totalScore * 100).toFixed(1) }}
           </template>
         </el-table-column>
+        <el-table-column prop="explanationText" label="匹配说明" show-overflow-tooltip />
       </el-table>
     </el-dialog>
   </div>
@@ -134,6 +127,7 @@ const loadingTasks = ref(false)
 const creating = ref(false)
 const showCreateDialog = ref(false)
 const showResultDialog = ref(false)
+const resultTaskName = ref('')
 const tasks = ref([])
 const taskResults = ref([])
 
@@ -145,11 +139,10 @@ const stats = reactive({
 })
 
 const newTask = reactive({
-  name: '',
+  taskName: '',
   college: '',
-  similarityWeight: 0.5,
-  complementarityWeight: 0.25,
-  vetoSafetyWeight: 0.25
+  major: '',
+  gender: ''
 })
 
 const getStatusType = (status) => {
@@ -177,24 +170,25 @@ const loadTasks = async () => {
   }
 }
 
-// Create a new task
+// Create a new task — sends taskName, college, major, gender to match backend expectations
 const handleCreateTask = async () => {
-  if (!newTask.name) {
+  if (!newTask.taskName) {
     return ElMessage.warning('请输入任务名称')
   }
   creating.value = true
   try {
     await createTask({
-      taskName: newTask.name,
+      taskName: newTask.taskName,
       college: newTask.college,
-      similarityWeight: newTask.similarityWeight,
-      complementarityWeight: newTask.complementarityWeight,
-      vetoSafetyWeight: newTask.vetoSafetyWeight
+      major: newTask.major,
+      gender: newTask.gender
     })
     ElMessage.success('任务创建成功')
     showCreateDialog.value = false
-    newTask.name = ''
+    newTask.taskName = ''
     newTask.college = ''
+    newTask.major = ''
+    newTask.gender = ''
     await loadTasks()
   } catch (err) {
     console.error('Create task failed:', err)
@@ -217,11 +211,11 @@ const handleRunTask = async (task) => {
   }
 }
 
-// View task result
+// View task result — backend returns flat per-student rows in data.allocations
 const handleViewResult = async (task) => {
   try {
-    // Backend returns { taskId, taskName, allocations: [...] }, interceptor unwraps it
     const data = await getTaskResult(task.taskId)
+    resultTaskName.value = data?.taskName || task.taskName || ''
     taskResults.value = Array.isArray(data?.allocations) ? data.allocations : (Array.isArray(data) ? data : [])
     showResultDialog.value = true
   } catch (err) {

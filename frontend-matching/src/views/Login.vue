@@ -129,7 +129,7 @@ const handleLogin = async () => {
       router.push('/admin/dashboard')
     } else {
       ElMessage.success('登录成功，请开始填写问卷')
-      router.push('/student/home')
+      router.push('/student/questionnaire')
     }
   } catch (err) {
     // Error already handled by axios interceptor (ElMessage.error)

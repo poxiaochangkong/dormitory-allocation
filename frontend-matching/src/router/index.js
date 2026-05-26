@@ -33,7 +33,7 @@ router.beforeEach((to, from, next) => {
       if (role === 'admin') {
         return next('/admin/dashboard')
       }
-      return next('/student/home')
+      return next('/student/questionnaire')
     }
     return next()
   }

@@ -47,7 +47,7 @@
 
       <el-table v-else :data="tasks" style="width: 100%">
         <el-table-column prop="taskId" label="任务编号" width="200" />
-        <el-table-column prop="name" label="任务名称" width="180" />
+        <el-table-column prop="taskName" label="任务名称" width="180" />
         <el-table-column prop="status" label="当前状态" width="150">
           <template #default="scope">
             <el-tag :type="getStatusType(scope.row.status)">{{ scope.row.status }}</el-tag>
@@ -164,11 +164,11 @@ const loadTasks = async () => {
   loadingTasks.value = true
   try {
     const data = await listTasks()
-    if (Array.isArray(data)) {
-      tasks.value = data.map(t => ({ ...t, running: false }))
-      stats.totalTasks = data.length
-      stats.completedTasks = data.filter(t => t.status === 'completed').length
-    }
+    // Backend returns { tasks: [...] }, interceptor unwraps to { tasks: [...] }
+    const taskList = Array.isArray(data?.tasks) ? data.tasks : (Array.isArray(data) ? data : [])
+    tasks.value = taskList.map(t => ({ ...t, running: false }))
+    stats.totalTasks = taskList.length
+    stats.completedTasks = taskList.filter(t => t.status === 'completed').length
   } catch (err) {
     console.error('Load tasks failed:', err)
     // If API fails, show empty state (not mock data)
@@ -185,7 +185,7 @@ const handleCreateTask = async () => {
   creating.value = true
   try {
     await createTask({
-      name: newTask.name,
+      taskName: newTask.name,
       college: newTask.college,
       similarityWeight: newTask.similarityWeight,
       complementarityWeight: newTask.complementarityWeight,
@@ -220,8 +220,9 @@ const handleRunTask = async (task) => {
 // View task result
 const handleViewResult = async (task) => {
   try {
+    // Backend returns { taskId, taskName, allocations: [...] }, interceptor unwraps it
     const data = await getTaskResult(task.taskId)
-    taskResults.value = Array.isArray(data) ? data : (data ? [data] : [])
+    taskResults.value = Array.isArray(data?.allocations) ? data.allocations : (Array.isArray(data) ? data : [])
     showResultDialog.value = true
   } catch (err) {
     console.error('Get task result failed:', err)

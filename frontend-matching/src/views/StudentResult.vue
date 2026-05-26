@@ -1,4 +1,4 @@
-<!-- StudentResult.vue -->
+ <!-- StudentResult.vue -->
 <!-- 
   学生匹配结果展示页面
   - 从后端 API 获取真实分配结果

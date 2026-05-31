@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <ctime>
 #include <iomanip>
@@ -129,80 +130,254 @@ namespace dorm_alloc
             return dorms;
         }
 
-        // TODO: Implement actual similarity calculation.
-        // Currently returns a placeholder score based on simple matching.
+        // Map sleep schedule string to a numeric value for distance calculation.
+        // early=1.0, normal=2.0, late=3.0, very_late=4.0
+        double MatchEngine::MapSleepToNumeric(const std::string &schedule)
+        {
+            if (schedule == "early")
+                return 1.0;
+            if (schedule == "normal")
+                return 2.0;
+            if (schedule == "late")
+                return 3.0;
+            if (schedule == "very_late")
+                return 4.0;
+            return 2.5; // unknown defaults to middle
+        }
+
+        // Map gaming behavior string to a numeric value.
+        // never=1.0, sometimes=2.0, often=3.0, always=4.0
+        double MatchEngine::MapGamingToNumeric(const std::string &behavior)
+        {
+            if (behavior == "never")
+                return 1.0;
+            if (behavior == "sometimes")
+                return 2.0;
+            if (behavior == "often")
+                return 3.0;
+            if (behavior == "always")
+                return 4.0;
+            return 2.5; // unknown defaults to middle
+        }
+
+        // Calculate similarity score using normalized Euclidean distance
+        // across 6 dimensions: sleep, hygiene, noise, temperature, social, gaming.
+        // Returns a value in [0, 1] where 1 = identical habits.
         double MatchEngine::CalculateSimilarity(
             const StudentProfile &a,
             const StudentProfile &b)
         {
-            // Stub: simple attribute matching score
-            // TODO: Replace with actual similarity algorithm
-            double score = 0.0;
-            int total_fields = 0;
+            // Each dimension has a known range for normalization
+            // sleep:          1-4 (mapped from string)
+            // hygiene:        1-5
+            // noise:          1-5
+            // temperature:   18-30
+            // social:         1-5
+            // gaming:         1-4 (mapped from string)
 
-            // Sleep schedule match
+            struct DimRange
+            {
+                double val_a;
+                double val_b;
+                double min_val;
+                double max_val;
+                bool valid;
+            };
+
+            std::vector<DimRange> dims;
+
+            // Sleep schedule (string → numeric)
             if (!a.sleep_schedule.empty() && !b.sleep_schedule.empty())
             {
-                total_fields++;
-                if (a.sleep_schedule == b.sleep_schedule)
-                    score += 1.0;
+                dims.push_back({MapSleepToNumeric(a.sleep_schedule),
+                                MapSleepToNumeric(b.sleep_schedule), 1.0, 4.0, true});
             }
 
-            // Gaming behavior match
+            // Hygiene level (1-5)
+            if (a.hygiene_level > 0 && b.hygiene_level > 0)
+            {
+                dims.push_back({(double)a.hygiene_level, (double)b.hygiene_level, 1.0, 5.0, true});
+            }
+
+            // Noise tolerance (1-5)
+            if (a.noise_tolerance > 0 && b.noise_tolerance > 0)
+            {
+                dims.push_back({(double)a.noise_tolerance, (double)b.noise_tolerance, 1.0, 5.0, true});
+            }
+
+            // Temperature preference (18-30)
+            if (a.temperature_preference > 0 && b.temperature_preference > 0)
+            {
+                dims.push_back({(double)a.temperature_preference, (double)b.temperature_preference, 18.0, 30.0, true});
+            }
+
+            // Social preference (1-5)
+            if (a.social_preference > 0 && b.social_preference > 0)
+            {
+                dims.push_back({(double)a.social_preference, (double)b.social_preference, 1.0, 5.0, true});
+            }
+
+            // Gaming behavior (string → numeric 1-4)
             if (!a.gaming_behavior.empty() && !b.gaming_behavior.empty())
             {
-                total_fields++;
-                if (a.gaming_behavior == b.gaming_behavior)
-                    score += 1.0;
+                dims.push_back({MapGamingToNumeric(a.gaming_behavior),
+                                MapGamingToNumeric(b.gaming_behavior), 1.0, 4.0, true});
             }
 
-            // MBTI compatibility (simple match)
-            if (!a.mbti_type.empty() && !b.mbti_type.empty())
+            if (dims.empty())
+                return 0.5; // no data available
+
+            // Calculate normalized Euclidean distance
+            double sum_sq = 0.0;
+            for (const auto &d : dims)
             {
-                total_fields++;
-                if (a.mbti_type == b.mbti_type)
-                    score += 1.0;
+                double range = d.max_val - d.min_val;
+                if (range <= 0.0)
+                    continue;
+                double norm_diff = (d.val_a - d.val_b) / range;
+                sum_sq += norm_diff * norm_diff;
             }
 
-            if (total_fields == 0)
-                return 0.5;
+            double euclidean_dist = std::sqrt(sum_sq / dims.size());
 
-            return score / total_fields;
+            // Convert distance to similarity: similarity = 1 / (1 + distance)
+            // distance=0 → similarity=1.0 (identical)
+            // distance=1 → similarity=0.5 (max normalized diff per dimension)
+            return 1.0 / (1.0 + euclidean_dist);
         }
 
-        // TODO: Implement actual complementarity calculation.
+        // Calculate MBTI complementarity for a single dimension.
+        // Same letter → low complementarity, different letter → high complementarity.
+        double MatchEngine::MbtiDimensionScore(char a, char b)
+        {
+            if (a == b)
+                return 0.2; // same preference, low complementarity
+            // Check if they are a valid MBTI pair on the same dimension
+            if ((a == 'E' && b == 'I') || (a == 'I' && b == 'E') ||
+                (a == 'S' && b == 'N') || (a == 'N' && b == 'S') ||
+                (a == 'T' && b == 'F') || (a == 'F' && b == 'T') ||
+                (a == 'J' && b == 'P') || (a == 'P' && b == 'J'))
+            {
+                return 1.0; // perfect complementarity on this dimension
+            }
+            return 0.3; // unrelated letters, slight complementarity
+        }
+
+        // Calculate complementarity score based on MBTI and social preference.
+        // MBTI complementarity counts for 60%, social preference difference counts for 40%.
+        // Returns a value in [0, 1].
         double MatchEngine::CalculateComplementarity(
             const StudentProfile &a,
             const StudentProfile &b)
         {
-            // Stub: placeholder based on numeric field differences
-            // TODO: Replace with actual algorithm
-            (void)a;
-            (void)b;
-            return 0.5;
+            double score = 0.0;
+            double total_weight = 0.0;
+
+            // MBTI complementarity (weight = 0.6)
+            if (a.mbti_type.size() >= 4 && b.mbti_type.size() >= 4)
+            {
+                double mbti_score = 0.0;
+                for (size_t i = 0; i < 4; ++i)
+                {
+                    mbti_score += MbtiDimensionScore(a.mbti_type[i], b.mbti_type[i]);
+                }
+                mbti_score /= 4.0; // average over 4 dimensions
+                score += 0.6 * mbti_score;
+                total_weight += 0.6;
+            }
+
+            // Social preference complementarity (weight = 0.4)
+            // A social butterfly + a lone wolf = good complementarity
+            if (a.social_preference > 0 && b.social_preference > 0)
+            {
+                double diff = std::abs((double)a.social_preference - (double)b.social_preference);
+                // Normalize: max diff is 4 (1 vs 5), map to [0, 1]
+                double social_comp = diff / 4.0;
+                score += 0.4 * social_comp;
+                total_weight += 0.4;
+            }
+
+            if (total_weight == 0.0)
+                return 0.5; // no data
+
+            return score / total_weight;
         }
 
+        // Derive behavior tags from a student's questionnaire data.
+        // These tags represent the student's actual behaviors that could
+        // conflict with another student's veto items.
+        std::vector<std::string> MatchEngine::DeriveBehaviorTags(const StudentProfile &p)
+        {
+            std::vector<std::string> tags;
+
+            // smoke_alcohol: questionnaire doesn't collect this directly,
+            // so we cannot derive it from available data.
+
+            // midnight_gaming: games often/always AND sleeps very late
+            if ((p.gaming_behavior == "often" || p.gaming_behavior == "always") &&
+                (p.sleep_schedule == "very_late" || p.sleep_schedule == "late"))
+            {
+                tags.push_back("midnight_gaming");
+            }
+
+            // loud_speaker: high noise tolerance + high social preference
+            if (p.noise_tolerance >= 4 && p.social_preference >= 4)
+            {
+                tags.push_back("loud_speaker");
+            }
+
+            // bad_hygiene: very low hygiene level
+            if (p.hygiene_level == 1)
+            {
+                tags.push_back("bad_hygiene");
+            }
+
+            // over_demand: very high social + very high hygiene (demanding roommate)
+            if (p.social_preference >= 5 && p.hygiene_level >= 5)
+            {
+                tags.push_back("over_demand");
+            }
+
+            // boundary_violation: high social + low noise tolerance (contradictory profile)
+            // This is a proxy; no direct question about boundaries.
+            if (p.social_preference >= 4 && p.noise_tolerance <= 2)
+            {
+                tags.push_back("boundary_violation");
+            }
+
+            // pets: questionnaire doesn't collect this, cannot derive.
+
+            // opposite_sex: not derivable from questionnaire.
+
+            return tags;
+        }
+
+        // Check veto conflicts: if student A has veto items that match
+        // student B's actual behaviors (or vice versa), they conflict.
         bool MatchEngine::HasVetoConflict(
             const StudentProfile &a,
             const StudentProfile &b)
         {
-            // Check if a's veto items conflict with b's profile
-            // For simplicity: if a has veto items that match b's gaming_behavior
-            for (const auto &item : a.veto_items)
+            auto tags_b = DeriveBehaviorTags(b);
+            for (const auto &veto : a.veto_items)
             {
-                if (item == b.gaming_behavior)
-                    return true;
-                if (item == b.sleep_schedule)
-                    return true;
+                for (const auto &tag : tags_b)
+                {
+                    if (veto == tag)
+                        return true;
+                }
             }
-            // Check reverse
-            for (const auto &item : b.veto_items)
+
+            auto tags_a = DeriveBehaviorTags(a);
+            for (const auto &veto : b.veto_items)
             {
-                if (item == a.gaming_behavior)
-                    return true;
-                if (item == a.sleep_schedule)
-                    return true;
+                for (const auto &tag : tags_a)
+                {
+                    if (veto == tag)
+                        return true;
+                }
             }
+
             return false;
         }
 

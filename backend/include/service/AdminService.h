@@ -74,6 +74,10 @@ namespace dorm_alloc
                                              const std::string &admin_user_id,
                                              const std::string &target_user_id);
 
+            // Delete a task and its match results.
+            static std::string DeleteTask(MySqlClient &db,
+                                          const std::string &task_id);
+
             // List all users.
             static std::string ListUsers(MySqlClient &db);
         };

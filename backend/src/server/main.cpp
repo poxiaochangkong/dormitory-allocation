@@ -380,6 +380,27 @@ int main(int argc, char **argv)
                         JsonError(res, 400, e.what());
                     } });
 
+        // DELETE /api/admin/allocation/task/:taskId — delete a task and its results (requires auth)
+        svr.Delete(R"(/api/admin/allocation/task/([^/]+))", [&client](const httplib::Request &req, httplib::Response &res)
+                   {
+                       SetCors(res);
+                       try
+                       {
+                           AuthInfo auth;
+                           if (!AuthenticateRequest(client, req, auth) || auth.role != "admin")
+                           {
+                               JsonError(res, 401, "Unauthorized: admin access required.");
+                               return;
+                           }
+                           std::string task_id = req.matches[1];
+                           auto result = dorm_alloc::service::AdminService::DeleteTask(client, task_id);
+                           JsonSuccess(res, result);
+                       }
+                       catch (const std::exception &e)
+                       {
+                           JsonError(res, 400, e.what());
+                       } });
+
         // GET /api/admin/tasks - list all tasks
         svr.Get("/api/admin/tasks", [&client](const httplib::Request &, httplib::Response &res)
                 {

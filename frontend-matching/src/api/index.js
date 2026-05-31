@@ -126,11 +126,20 @@ export function adjustDormitory(data) {
   })
 }
 
-// Export task result as CSV
-export function exportTaskResult(taskId) {
-  // Use fetch directly since axios interceptor would parse CSV as JSON
-  return fetch(`/api/admin/allocation/task/export/${taskId}`, {
+// Export task result as CSV — use fetch to avoid axios JSON parsing
+export async function exportTaskResult(taskId) {
+  const resp = await fetch(`/api/admin/allocation/task/export/${taskId}`, {
     headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+  })
+  if (!resp.ok) throw new Error('Export failed')
+  return resp.text()
+}
+
+// Delete a task and its results
+export function deleteTask(taskId) {
+  return request({
+    url: `/admin/allocation/task/${taskId}`,
+    method: 'delete'
   })
 }
 
@@ -165,5 +174,22 @@ export function saveAllocationRule(data) {
     url: '/admin/allocation/rule/save',
     method: 'post',
     data: data
+  })
+}
+
+// Delete a user (admin cannot delete self or other admins)
+export function deleteUser(userId) {
+  return request({
+    url: `/admin/users/${userId}`,
+    method: 'delete'
+  })
+}
+
+// Transfer admin role to another user
+export function transferAdmin(targetUserId) {
+  return request({
+    url: '/admin/transfer',
+    method: 'post',
+    data: { targetUserId }
   })
 }

@@ -160,6 +160,14 @@ namespace dorm_alloc
                     "  FOREIGN KEY (dorm_id) REFERENCES dormitory(dorm_id)"
                     ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;");
 
+                // 9. system_config table (key-value store for allocation rules, etc.)
+                client.Execute(
+                    "CREATE TABLE IF NOT EXISTS `system_config` ("
+                    "  config_key VARCHAR(128) PRIMARY KEY,"
+                    "  config_value TEXT NOT NULL,"
+                    "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;");
+
                 // Create indexes (MySQL does not support IF NOT EXISTS for CREATE INDEX,
                 // so we silently ignore errors since indexes may already exist)
                 const char *indexes[] = {

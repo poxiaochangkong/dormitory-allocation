@@ -283,9 +283,16 @@ namespace dorm_alloc
             // Validate JSON is parseable
             auto rule = nlohmann::json::parse(rule_json);
 
-            // Store rule config in a simple key-value approach.
-            // For simplicity, we just return the rule as-is.
-            // In a real system, this would be stored in a config table.
+            // Persist the allocation rule into system_config table.
+            // Key: "allocation_rule", Value: the full rule JSON string.
+            {
+                std::ostringstream sql;
+                sql << "INSERT INTO system_config (config_key, config_value) VALUES "
+                    << "('allocation_rule', '" << Escape(rule_json) << "') "
+                    << "ON DUPLICATE KEY UPDATE config_value = '" << Escape(rule_json) << "';";
+                db.Execute(sql.str());
+            }
+
             nlohmann::json result;
             result["saved"] = true;
             result["rule"] = rule;
@@ -587,6 +594,31 @@ namespace dorm_alloc
 
             nlohmann::json result;
             result["dormId"] = dorm_id;
+            return result.dump();
+        }
+
+        std::string AdminService::DeleteTask(
+            MySqlClient &db,
+            const std::string &task_id)
+        {
+            // Verify task exists
+            auto rs = db.ExecuteQuery(
+                "SELECT task_id FROM allocation_task WHERE task_id = '" +
+                Escape(task_id) + "';");
+
+            if (!rs->next())
+            {
+                throw std::runtime_error("Task not found: " + task_id);
+            }
+
+            // Delete related match results first (foreign key constraints)
+            db.Execute("DELETE FROM match_result WHERE task_id = '" + Escape(task_id) + "';");
+            // Delete the task itself
+            db.Execute("DELETE FROM allocation_task WHERE task_id = '" + Escape(task_id) + "';");
+
+            nlohmann::json result;
+            result["deleted"] = true;
+            result["taskId"] = task_id;
             return result.dump();
         }
 

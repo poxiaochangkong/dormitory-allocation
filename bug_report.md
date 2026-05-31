@@ -1,6 +1,6 @@
 # Bug Report - 前后端对接问题汇总
 
-> 生成时间：2026-05-25（更新于 2026-05-26）
+> 生成时间：2026-05-25（更新于 2026-05-31）
 > 范围：前端 `frontend-matching` 与 后端 `backend` 的 API 对接问题、UI 缺陷
 
 ---
@@ -106,38 +106,31 @@
 
 ## 🟡 P1 — 中等缺陷（功能缺失或体验差）
 
-### Bug 10: 管理员无删除任务功能
+### ~~Bug 10: 管理员无删除任务功能~~ ✅ 已修复
 
-**问题**: 
-- 后端没有删除任务的端点
-- 前端任务表格没有"删除"按钮
-- 管理员无法清理错误创建的任务
-
-**修复方案**: 
-1. 后端新增 `DELETE /api/admin/allocation/task/:taskId` 端点
+**修复**:
+1. 后端新增 `DELETE /api/admin/allocation/task/:taskId` 端点（`AdminService::DeleteTask`）
 2. 前端添加 `deleteTask(taskId)` API 函数和删除按钮（带确认弹窗）
 
 ---
 
-### Bug 11: 管理员无用户管理页面
+### ~~Bug 11: 管理员无用户管理页面~~ ✅ 已修复
 
-**问题**:
-- 后端已实现 `GET /api/admin/users` 和 `DELETE /api/admin/users/:userId`
-- 前端 `api/index.js` 已定义 `listUsers()` 和 `deleteUser()` 函数
-- 但没有任何 Vue 页面调用这些函数，用户列表和删除功能完全不可用
-
-**修复方案**: 在 AdminDashboard 中添加用户管理区域，或创建独立的用户管理页面。
+**修复**: AdminDashboard 中添加了用户管理区域：
+- 表格展示用户列表（学号、学院、角色）
+- 每行有"删除"按钮（带确认弹窗，不可删除管理员）
+- "设为管理员"按钮（管理员权限转让，转让后自动退出登录）
+- 前端新增 `deleteUser()`、`transferAdmin()` API 函数
 
 ---
 
-### Bug 12: 无批量导入学生 UI
+### ~~Bug 12: 无批量导入学生 UI~~ ✅ 已修复
 
-**问题**:
-- 后端已实现 `POST /api/admin/students/import`
-- 前端 `api/index.js` 已定义 `importStudents()` 函数
-- 但 AdminDashboard 中没有上传按钮或导入界面
-
-**修复方案**: 在管理后台添加"导入学生"按钮，支持 Excel/CSV 文件上传。
+**修复**: AdminDashboard 添加了"批量导入学生"卡片和对话框：
+- 点击"导入学生"弹出对话框
+- 文本框粘贴 JSON 数组格式的学生数据
+- 前端解析 JSON 后调用 `importStudents()` API
+- 显示导入结果（成功/失败 + 导入数量）
 
 ---
 
@@ -152,14 +145,9 @@
 
 ---
 
-### Bug 14: 无导出分配结果按钮
+### ~~Bug 14: 无导出分配结果按钮~~ ✅ 已修复
 
-**问题**:
-- 后端已实现 `GET /api/admin/allocation/task/export/:taskId`
-- 前端 `api/index.js` 已定义 `exportTaskResult()` 函数
-- 但 AdminDashboard 的任务表格中没有"导出"按钮
-
-**修复方案**: 在任务操作列添加"导出结果"按钮。
+**修复**: AdminDashboard 任务表格操作列已添加"导出CSV"按钮，调用 `exportTaskResult()` 下载 CSV 文件。
 
 ---
 
@@ -193,7 +181,7 @@
 | `GET /api/student/info/:userId` | 获取学生信息 | 无 API 函数，无调用 |
 | `GET /api/admin/allocation/rules` | 获取分配规则列表 | 无 API 函数，无调用 |
 | `GET /api/admin/dashboard/stats` | 仪表盘统计数据 | 无 API 函数，无调用 |
-| `POST /api/admin/transfer` | 管理员权限转让 | 无 API 函数，无调用 |
+| `POST /api/admin/transfer` | 管理员权限转让 | ✅ 已添加 API 函数和管理员转让 UI |
 
 ---
 
@@ -218,11 +206,11 @@
 | P0 | Bug 7: 返回大厅路由不存在 | 路由错误 | 简单 | ✅ 已修复 |
 | P0 | Bug 8: 创建任务字段不匹配 | 后端忽略权重值 | 中等 | ✅ 已修复 |
 | P0 | Bug 9: 结果表格列定义错误 | 分配学生列为空 | 中等 | ✅ 已修复 |
-| P1 | Bug 10: 无删除任务功能 | 管理功能不完整 | 中等（需前后端） | ❌ 未修复 |
-| P1 | Bug 11: 无用户管理页面 | 管理功能不完整 | 中等 | ❌ 未修复 |
-| P1 | Bug 12: 无导入学生 UI | 管理功能不完整 | 中等 | ❌ 未修复 |
+| P1 | Bug 10: 无删除任务功能 | 管理功能不完整 | 中等（需前后端） | ✅ 已修复 |
+| P1 | Bug 11: 无用户管理页面 | 管理功能不完整 | 中等 | ✅ 已修复 |
+| P1 | Bug 12: 无导入学生 UI | 管理功能不完整 | 中等 | ✅ 已修复 |
 | P1 | Bug 13: 无规则配置 UI | 管理功能不完整 | 中等 | ❌ 未修复 |
-| P1 | Bug 14: 无导出结果按钮 | 管理功能不完整 | 简单 | ❌ 未修复 |
+| P1 | Bug 14: 无导出结果按钮 | 管理功能不完整 | 简单 | ✅ 已修复 |
 | P2 | Bug 15: AdminAdjust 对接 | 调整功能受限 | 中等 | ❌ 未修复 |
 | P2 | Bug 16: 后端端点无前端 | 功能缺失 | 中等 | ❌ 未修复 |
 | P2 | Bug 17: 空状态提示 | 用户体验 | 简单 | ❌ 未修复 |
@@ -234,3 +222,4 @@
 - 2026-05-25: 初始版本，记录 Bug 1-7
 - 2026-05-26: Bug 1-5 标记为已修复；新增 Bug 6-17（全面 UI 缺陷检查）；移除"学生端无注册入口"（确认 Login.vue 已有注册表单）
 - 2026-05-26 P0修复轮: Bug 6-9 全部修复（添加退出按钮、确认路由、重写创建任务表单、重写结果表格），27 条单元测试全部通过
+- 2026-05-31 高优先级修复轮: Bug 10-12, 14 全部修复；后端匹配算法重写（CalculateSimilarity 归一化欧氏距离 + CalculateComplementarity MBTI互补 + HasVetoConflict 行为标签匹配）；分配规则持久化存储（system_config 表）；前端新增导入学生UI、用户管理区域、deleteUser/transferAdmin API

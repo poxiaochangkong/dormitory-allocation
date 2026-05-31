@@ -3,11 +3,10 @@
 // Matching engine for dormitory allocation.
 //
 // This module handles:
-// - Veto filtering
-// - Similarity/complementarity scoring (TODO: actual algorithm)
-// - Dormitory assignment
-//
-// The actual similarity calculation is left as a stub for future implementation.
+// - Veto filtering (behavior-based conflict detection)
+// - Similarity scoring (normalized Euclidean distance)
+// - Complementarity scoring (MBTI + social preference)
+// - Greedy dormitory assignment
 
 #include <string>
 #include <vector>
@@ -93,18 +92,29 @@ namespace dorm_alloc
                 MySqlClient &db,
                 const std::string &gender);
 
-            // TODO: Calculate similarity score between two students.
-            // This is the core algorithm to be implemented.
+            // Map sleep schedule string to numeric value for distance calculation.
+            static double MapSleepToNumeric(const std::string &schedule);
+
+            // Map gaming behavior string to numeric value.
+            static double MapGamingToNumeric(const std::string &behavior);
+
+            // Calculate similarity score using normalized Euclidean distance.
             static double CalculateSimilarity(
                 const StudentProfile &a,
                 const StudentProfile &b);
 
-            // TODO: Calculate complementarity score between two students.
+            // Calculate MBTI complementarity dimension score.
+            static double MbtiDimensionScore(char a, char b);
+
+            // Calculate complementarity score based on MBTI and social preference.
             static double CalculateComplementarity(
                 const StudentProfile &a,
                 const StudentProfile &b);
 
-            // Check veto conflicts between two students.
+            // Derive behavior tags from a student's questionnaire data.
+            static std::vector<std::string> DeriveBehaviorTags(const StudentProfile &p);
+
+            // Check veto conflicts: A's veto items vs B's actual behaviors.
             static bool HasVetoConflict(
                 const StudentProfile &a,
                 const StudentProfile &b);

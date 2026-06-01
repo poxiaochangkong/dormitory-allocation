@@ -1,225 +1,263 @@
-# Bug Report - 前后端对接问题汇总
+# Bug Report
 
-> 生成时间：2026-05-25（更新于 2026-05-31）
-> 范围：前端 `frontend-matching` 与 后端 `backend` 的 API 对接问题、UI 缺陷
-
----
-
-## ✅ 已修复的 Bug
-
-### ~~Bug 1: AdminDashboard 任务列表不显示~~ ✅ 已修复
-
-**文件**: `frontend-matching/src/views/AdminDashboard.vue` 第 167-171 行
-
-**原因**: `loadTasks()` 中数据格式不匹配。后端返回 `{ tasks: [...] }`，前端直接用 `Array.isArray(data)` 判断，永远为 false。
-
-**修复**: 改为 `Array.isArray(data?.tasks) ? data.tasks : (Array.isArray(data) ? data : [])`
+> 生成时间：2026-06-01
+> 范围：前后端对接问题、静态代码分析发现的 bug
+> 说明：仅列出未修复的 bug
 
 ---
 
-### ~~Bug 2: 创建任务时任务名称丢失~~ ✅ 已修复
+## 🔴 严重缺陷
 
-**文件**: `frontend-matching/src/views/AdminDashboard.vue` 第 187 行
+### C2. SQL 注入 —— 所有 SQL 均使用字符串拼接
 
-**原因**: 前端发送 `name` 字段，后端读取 `taskName` 字段。
+**文件**: `StudentService.cpp`, `AdminService.cpp`, `MatchEngine.cpp`, `server/main.cpp`
 
-**修复**: 前端改为发送 `taskName: newTask.name`
+**描述**: 所有 SQL 查询通过字符串拼接用户输入构建。虽然有 `Escape()` 函数处理单引号，但不能防御全部注入向量（反引号、null bytes、多字节字符攻击）。
 
----
+**影响**: 数据库可能被攻破。
 
-### ~~Bug 3: 任务表格"任务名称"列不显示~~ ✅ 已修复
-
-**文件**: `frontend-matching/src/views/AdminDashboard.vue` 第 50 行
-
-**原因**: `<el-table-column prop="name">` 与后端返回字段 `taskName` 不匹配。
-
-**修复**: 改为 `prop="taskName"`
+**当前状态**: ⚠️ 部分缓解 — `Escape()` 覆盖了最常见的单引号向量。完整防护需改用 prepared statements + 参数绑定，改动量较大。
 
 ---
 
-### ~~Bug 4: 学生登录后跳转到不存在的路由~~ ✅ 已修复
+### C3. Token 使用 `std::rand()` 生成 —— 非密码学安全
 
-**文件**: `frontend-matching/src/views/Login.vue` 第 132 行 + `frontend-matching/src/router/index.js` 第 36 行
+**文件**: `StudentService.cpp`, `AdminService.cpp`
 
-**原因**: 学生登录后跳转到 `/student/home`，但路由表中无此路由，也没有 `StudentHome.vue` 组件。
+**描述**: 认证 Token 由 `std::rand()` + 毫秒时间戳种子生成。`std::rand()` 不是密码学安全的 PRNG，Token 值可预测。
 
-**修复**: 跳转目标改为 `/student/questionnaire`
-
----
-
-### ~~Bug 5: 查看任务结果数据格式不匹配~~ ✅ 已修复
-
-**文件**: `frontend-matching/src/views/AdminDashboard.vue` 第 222 行
-
-**原因**: 后端返回 `{ allocations: [...] }`，前端直接当数组使用。
-
-**修复**: 改为从 `data.allocations` 读取
+**影响**: Token 预测 → 会话劫持。
 
 ---
 
-## 🔴 P0 — 严重缺陷（功能完全不可用）
+### C4. `AdjustResult` 只交换 dorm_id，不更新 roommate_ids
 
-### ~~Bug 6: 学生端所有页面无退出登录按钮~~ ✅ 已修复
+**文件**: `AdminService.cpp` — `AdjustResult()`
 
-**文件**: `Questionnaire.vue` / `ImmersiveScene.vue` / `StudentResult.vue`
+**描述**: 管理员调整分配结果时只更新了 `dorm_id`，未重新计算受影响房间的 `roommate_ids`，导致数据不一致。
 
-**原因**: 三个学生页面均没有退出登录按钮。学生登录后无法退出，只能手动清除浏览器 localStorage。
-
-**修复**: 在每个学生页面的 header 区域添加了红色「退出登录」按钮，清除 localStorage（token/userId/role）后跳转到 `/login`。
+**影响**: 调整后室友列表数据错误。
 
 ---
 
-### ~~Bug 7: "返回大厅" 按钮指向不存在的路由~~ ✅ 已修复
+### C5. `ImportStudents` 总是生成新 user_id
 
-**文件**: `Questionnaire.vue` / `ImmersiveScene.vue` / `StudentResult.vue`
+**文件**: `AdminService.cpp` — `ImportStudents()`
 
-**原因**: 最初 `/student/home` 路由不存在。后来路由表已添加 `/student/home` 路由和 `StudentHome.vue` 组件，但 ImmersiveScene 和 StudentResult 页面缺少"返回大厅"按钮。
+**描述**: 每次导入生成新 `user_id`（`GenId("u_")`）。若 `student_no` 已存在，`ON DUPLICATE KEY UPDATE` 会更新旧行，但 `count++` 仍然递增，导入数量统计误导。
 
-**修复**: 确认 `/student/home` 路由已正确定义。在 ImmersiveScene 中添加了"返回大厅"按钮。Questionnaire 和 StudentResult 已有正确导航。
-
----
-
-### ~~Bug 8: 创建任务表单字段与后端不匹配~~ ✅ 已修复
-
-**文件**: `frontend-matching/src/views/AdminDashboard.vue` 创建任务对话框
-
-**原因**:
-- 前端发送: `{ taskName, college, similarityWeight, complementarityWeight, vetoSafetyWeight }`
-- 后端 `CreateTask` 读取: `{ taskName, college, major, gender }`
-- 后端不读取三个 weight 字段，前端缺少 `major` 和 `gender` 输入框
-
-**修复**: 采用方案 A — 移除了无效的权重滑块，添加了 `major`（专业）输入框和 `gender`（性别限制）下拉选择框。表单数据 `newTask` 改为 `{ taskName, college, major, gender }`，与后端完全对齐。
+**影响**: 给管理员展示错误的导入计数。
 
 ---
 
-### ~~Bug 9: 任务结果表格列定义与后端数据不匹配~~ ✅ 已修复
+## 🟠 高优先级
 
-**文件**: `frontend-matching/src/views/AdminDashboard.vue` 结果对话框
+### H2. `GreedyAssign` 中 `dorm_idx` 变量多余
 
-**原因**: 
-- 前端期望 `userIds` 数组列（按宿舍分组）
-- 后端 `GetTaskResult` 返回的是**每行一个学生**的扁平结构：`{ studentNo, building, roomNumber, totalScore, explanationText }`
+**文件**: `MatchEngine.cpp` — `GreedyAssign()`
 
-**修复**: 结果表格改为扁平列表，列定义为：学号（`studentNo`）、楼栋（`building`）、房间号（`roomNumber`）、匹配分（`totalScore`）、匹配说明（`explanationText`）。同时添加了 `resultTaskName` 展示任务名称。
+**描述**: `for (const auto &dorm : dorms)` 已遍历寝室，但内部还维护 `dorm_idx` 做冗余边界检查，是死代码。
 
----
-
-## 🟡 P1 — 中等缺陷（功能缺失或体验差）
-
-### ~~Bug 10: 管理员无删除任务功能~~ ✅ 已修复
-
-**修复**:
-1. 后端新增 `DELETE /api/admin/allocation/task/:taskId` 端点（`AdminService::DeleteTask`）
-2. 前端添加 `deleteTask(taskId)` API 函数和删除按钮（带确认弹窗）
+**影响**: 无功能影响，但代码可读性差。
 
 ---
 
-### ~~Bug 11: 管理员无用户管理页面~~ ✅ 已修复
+### H3. `MatchEngine::Match()` 声明了但未实现
 
-**修复**: AdminDashboard 中添加了用户管理区域：
-- 表格展示用户列表（学号、学院、角色）
-- 每行有"删除"按钮（带确认弹窗，不可删除管理员）
-- "设为管理员"按钮（管理员权限转让，转让后自动退出登录）
-- 前端新增 `deleteUser()`、`transferAdmin()` API 函数
+**文件**: `MatchEngine.h` / `MatchEngine.cpp`
 
----
+**描述**: 头文件声明了 `Match()` 方法，实际实现是静态方法 `ExecuteAllocation()`。调用 `Match()` 会链接错误。
 
-### ~~Bug 12: 无批量导入学生 UI~~ ✅ 已修复
-
-**修复**: AdminDashboard 添加了"批量导入学生"卡片和对话框：
-- 点击"导入学生"弹出对话框
-- 文本框粘贴 JSON 数组格式的学生数据
-- 前端解析 JSON 后调用 `importStudents()` API
-- 显示导入结果（成功/失败 + 导入数量）
+**影响**: 编译通过但链接时出错。
 
 ---
 
-### Bug 13: 无分配规则配置 UI
+### H6. `SaveAllocationRule` 保存 JSON 时转义不完整
 
-**问题**:
-- 后端已实现 `POST /api/admin/allocation/rule/save`
-- 前端 `api/index.js` 已定义 `saveAllocationRule()` 函数
-- 但没有规则配置的 UI 页面
+**文件**: `AdminService.cpp` — `SaveAllocationRule()`
 
-**修复方案**: 在管理后台添加分配规则配置区域。
+**描述**: `rule_json` 经 `Escape()` 只转义了单引号，JSON 中的反斜杠等 SQL 特殊字符未被处理。
 
----
-
-### ~~Bug 14: 无导出分配结果按钮~~ ✅ 已修复
-
-**修复**: AdminDashboard 任务表格操作列已添加"导出CSV"按钮，调用 `exportTaskResult()` 下载 CSV 文件。
+**影响**: 保存复杂规则时可能 SQL 报错或注入。
 
 ---
 
-## 🟢 P2 — 轻微缺陷（可用但需优化）
+## 🟡 中等优先级
 
-### Bug 15: AdminAdjust 无法手动调整学生分配结果
+### M1. `GenerateToken()` 调用 `std::srand()` 影响全局随机状态
 
-**文件**: `frontend-matching/src/views/AdminAdjust.vue`
+**文件**: `StudentService.cpp`, `AdminService.cpp`
 
-**问题**: 
-- 后端已实现 `POST /api/admin/allocation/task/adjust`（交换两个学生的宿舍，参数 `taskId + userId1 + userId2`）
-- 前端页面有拖拽 UI 但实际无法使用：
-  - 没有"选择学生 A → 选择学生 B → 交换宿舍"的操作流程
-  - 没有将单个学生移动到指定宿舍的功能
-  - 调整后无法保存到后端
-- 管理员完全无法手动干预某个具体学生的分配结果
+**描述**: 每次调用 `std::srand()` 重设全局随机数种子。若两个登录请求间隔很短，可能得到相同种子 → 相同 Token。
 
-**修复方案**: 
-1. 加载任务分配结果，展示按宿舍分组的学生列表
-2. 提供"交换"操作：选择两个学生，点击交换按钮，调用 `adjustDormitory({ taskId, userId1, userId2 })`
-3. 提供"移动"操作：选择一个学生和目标宿舍，将其移入（需后端新增移动接口，或通过交换模拟）
+**影响**: Token 碰撞 → 会话劫持。
 
 ---
 
-### Bug 16: 后端多个端点无前端对接
+### M2. `GenId()` 用毫秒 + rand 生成 ID
+
+**文件**: `StudentService.cpp`, `AdminService.cpp`, `MatchEngine.cpp`
+
+**描述**: 时间戳毫秒 + `rand() % 10000`。高并发下 ID 会碰撞。
+
+**影响**: 主键重复错误或静默数据覆盖。
+
+---
+
+### M3. `AdminDashboard.vue` 调用了未定义的 `refreshTaskList()`
+
+**文件**: `AdminDashboard.vue`
+
+**描述**: 模板中引用了 `refreshTaskList()`，但组件 methods 中未定义此函数。
+
+**影响**: 点击刷新按钮时 JS 运行时错误，任务列表无法刷新。
+
+---
+
+### M4. 问卷 `nightOwls` 字段未在匹配算法中使用
+
+**文件**: `QuestionnaireView.vue` / `StudentService.cpp`
+
+**描述**: 问卷表单包含 `nightOwls` 字段，但后端 `SubmitQuestionnaire` 仅存入 `raw_answers` JSON，匹配算法未使用该数据。
+
+**影响**: 用户偏好数据被收集但不参与匹配。
+
+---
+
+### M6. `GetMatchResult` 返回虚假子分数
+
+**文件**: `StudentService.cpp` — `GetMatchResult()`
+
+**描述**: 返回的 `hygieneConsistencyScore` 和 `scheduleOverlapScore` 由公式 `sim_score * 0.9 + 0.05`、`sim_score * 0.85 + 0.1` 计算，并非算法的真实度量。
+
+**影响**: 前端雷达图展示误导性数据。
+
+---
+
+### M7. `ListTasks` 和 `ListDormitories` 无认证
+
+**文件**: `server/main.cpp`
+
+**描述**: `GET /api/admin/tasks` 和 `GET /api/admin/dormitories` 没有认证检查。
+
+**影响**: 任何人可以未登录查看所有任务和寝室。
+
+---
+
+### M8. `ExportResult` CSV 未转义字段中的逗号
+
+**文件**: `AdminService.cpp` — `ExportResult()`
+
+**描述**: 若 college、major 等字段含逗号，CSV 格式会被破坏。
+
+**影响**: 导出的 CSV 在 Excel 等工具中解析错误。
+
+---
+
+### Bug 13. 无分配规则配置 UI
+
+**文件**: `AdminDashboard.vue`
+
+**问题**: 后端已实现 `POST /api/admin/allocation/rule/save`，前端 `api/index.js` 已定义 `saveAllocationRule()`，但缺少规则配置 UI 页面。
+
+**影响**: 管理员无法通过界面配置分配规则。
+
+---
+
+### Bug 15. AdminAdjust 无法手动调整学生分配
+
+**文件**: `AdminAdjust.vue`
+
+**问题**: 后端已实现交换接口，前端页面有拖拽 UI 但实际无法使用，没有完整的操作流程。
+
+**影响**: 管理员无法手动干预分配结果。
+
+---
+
+### Bug 16. 后端多个端点无前端对接
 
 | 后端端点 | 功能 | 前端状态 |
 |---------|------|---------|
 | `GET /api/student/questionnaire/template` | 获取问卷模板 | 无 API 函数，无调用 |
-| `GET /api/student/questionnaire/status/:userId` | 查询问卷填写状态 | 无 API 函数，无调用 |
+| `GET /api/student/questionnaire/status/:userId` | 查询问卷状态 | 无 API 函数，无调用 |
 | `GET /api/student/info/:userId` | 获取学生信息 | 无 API 函数，无调用 |
-| `GET /api/admin/allocation/rules` | 获取分配规则列表 | 无 API 函数，无调用 |
-| `GET /api/admin/dashboard/stats` | 仪表盘统计数据 | 无 API 函数，无调用 |
-| `POST /api/admin/transfer` | 管理员权限转让 | ✅ 已添加 API 函数和管理员转让 UI |
+| `GET /api/admin/allocation/rules` | 获取分配规则 | 无 API 函数，无调用 |
+| `GET /api/admin/dashboard/stats` | 仪表盘统计 | 无 API 函数，无调用 |
 
 ---
 
-### Bug 17: StudentResult 空状态提示不够友好
+### Bug 17. StudentResult 空状态提示不够友好
 
-**文件**: `frontend-matching/src/views/StudentResult.vue`
+**文件**: `StudentResult.vue`
 
-**问题**: 管理员未运行分配任务时，只显示"暂无分配结果"，缺少引导用户返回完成问卷的提示。
+**问题**: 未分配时只显示"暂无分配结果"，缺少引导用户完成问卷的提示。
 
----
-
-## 📋 修复优先级总览
-
-| 优先级 | Bug | 影响范围 | 修复难度 | 状态 |
-|-------|-----|---------|---------|------|
-| P0 | Bug 1: 任务列表不显示 | 管理员无法使用系统 | 简单 | ✅ 已修复 |
-| P0 | Bug 2: 任务名称丢失 | 数据展示错误 | 简单 | ✅ 已修复 |
-| P0 | Bug 3: 表格列不匹配 | UI 显示问题 | 简单 | ✅ 已修复 |
-| P0 | Bug 4: 学生登录跳转错误 | 学生无法进入系统 | 简单 | ✅ 已修复 |
-| P0 | Bug 5: 结果数据格式错误 | 结果无法显示 | 简单 | ✅ 已修复 |
-| P0 | Bug 6: 学生端无退出登录 | 学生无法退出 | 简单 | ✅ 已修复 |
-| P0 | Bug 7: 返回大厅路由不存在 | 路由错误 | 简单 | ✅ 已修复 |
-| P0 | Bug 8: 创建任务字段不匹配 | 后端忽略权重值 | 中等 | ✅ 已修复 |
-| P0 | Bug 9: 结果表格列定义错误 | 分配学生列为空 | 中等 | ✅ 已修复 |
-| P1 | Bug 10: 无删除任务功能 | 管理功能不完整 | 中等（需前后端） | ✅ 已修复 |
-| P1 | Bug 11: 无用户管理页面 | 管理功能不完整 | 中等 | ✅ 已修复 |
-| P1 | Bug 12: 无导入学生 UI | 管理功能不完整 | 中等 | ✅ 已修复 |
-| P1 | Bug 13: 无规则配置 UI | 管理功能不完整 | 中等 | ❌ 未修复 |
-| P1 | Bug 14: 无导出结果按钮 | 管理功能不完整 | 简单 | ✅ 已修复 |
-| P2 | Bug 15: AdminAdjust 对接 | 调整功能受限 | 中等 | ❌ 未修复 |
-| P2 | Bug 16: 后端端点无前端 | 功能缺失 | 中等 | ❌ 未修复 |
-| P2 | Bug 17: 空状态提示 | 用户体验 | 简单 | ❌ 未修复 |
+**影响**: 用户体验欠佳。
 
 ---
 
-## 📝 修改记录
+## 🔵 低优先级
 
-- 2026-05-25: 初始版本，记录 Bug 1-7
-- 2026-05-26: Bug 1-5 标记为已修复；新增 Bug 6-17（全面 UI 缺陷检查）；移除"学生端无注册入口"（确认 Login.vue 已有注册表单）
-- 2026-05-26 P0修复轮: Bug 6-9 全部修复（添加退出按钮、确认路由、重写创建任务表单、重写结果表格），27 条单元测试全部通过
-- 2026-05-31 高优先级修复轮: Bug 10-12, 14 全部修复；后端匹配算法重写（CalculateSimilarity 归一化欧氏距离 + CalculateComplementarity MBTI互补 + HasVetoConflict 行为标签匹配）；分配规则持久化存储（system_config 表）；前端新增导入学生UI、用户管理区域、deleteUser/transferAdmin API
+### L1. 注册无密码强度校验
+
+**文件**: `StudentService.cpp` — `Register()`
+
+**描述**: 任何密码均接受，仅通过 `password.empty()` 拦空白串。
+
+---
+
+### L2. 前端 API baseURL 硬编码为 `localhost:8080`
+
+**文件**: `frontend-matching/src/api/index.js`
+
+**描述**: axios baseURL 硬编码，应使用环境变量配置。
+
+---
+
+### L3. 登录端点无速率限制
+
+**文件**: `server/main.cpp`
+
+**描述**: `/api/student/login` 和 `/api/admin/login` 无暴力破解防护。
+
+---
+
+### L4. 单锁 `db_mutex` 串行化所有请求
+
+**文件**: `server/main.cpp`
+
+**描述**: 单个 mutex 守护所有数据库访问，高负载下成为瓶颈。
+
+---
+
+### L5. Token 永不过期
+
+**文件**: `StudentService.cpp`, `AdminService.cpp`
+
+**描述**: Token 无过期机制，除非重新登录（生成新 Token 隐式作废旧 Token）。
+
+---
+
+## 前后端接口对比
+
+| # | 端点 | 前端发送 | 后端接收 | 状态 |
+|---|------|---------|---------|------|
+| 1 | Admin Login | `{ studentNo, password }` | `{ studentNo, password }` | ✅ 匹配 |
+| 2 | Questionnaire Submit | 字母编码(A/B/C/D) | 字符串/数值 | ✅ 已修复(加映射) |
+| 3 | Scene Submit | Scene data JSON | JSON + userId | ✅ 已修复 |
+| 4 | Match Result | GET + Bearer token | Token auth | ✅ 已修复 |
+| 5 | Admin Task Create | `{ taskName, ... }` | `{ taskName, ... }` | ✅ 匹配 |
+| 6 | Admin Import | JSON array | JSON array | ✅ 匹配 |
+
+---
+
+## 修复建议（按优先级）
+
+1. **C3**: 使用 CSPRNG 生成 Token（`std::random_device` + `std::mt19937` 或 `BCryptGenRandom`）
+2. **C4**: `AdjustResult` 添加 roommate_ids 重算逻辑
+3. **M3**: 修复 `refreshTaskList` 未定义问题
+4. **M7**: `ListTasks` / `ListDormitories` 添加认证
+5. **H3**: 删除或实现 `MatchEngine::Match()`
+6. **C2**: 改用 prepared statements 参数绑定
+7. **M2**: 改用 UUID 或自增 ID
+8. **Bug 15**: 完成 `AdminAdjust.vue` 的交换操作流程

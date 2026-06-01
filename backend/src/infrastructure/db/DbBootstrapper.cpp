@@ -5,6 +5,7 @@
 
 #include "infrastructure/db/MySqlClient.h"
 #include "infrastructure/auth/CryptoUtil.h"
+#include "infrastructure/log/Logger.h"
 
 namespace dorm_alloc
 {

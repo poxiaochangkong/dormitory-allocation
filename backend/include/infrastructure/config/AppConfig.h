@@ -36,10 +36,22 @@ namespace dorm_alloc
                 std::string database = "dorm_alloc";
             };
 
+            struct LoggingConfig
+            {
+                // Directory for log files. Supports both absolute and relative paths.
+                // Relative paths are resolved relative to the working directory.
+                // The directory will be created automatically if it does not exist.
+                std::string log_dir = "./log/";
+
+                // Log level: "trace", "debug", "info", "warn", "error", "critical", "off"
+                std::string level = "info";
+            };
+
             struct AppConfig
             {
                 HttpConfig http;
                 MySqlConfig mysql;
+                LoggingConfig logging;
             };
 
             // Load config from a JSON file.

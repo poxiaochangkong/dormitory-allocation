@@ -1,4 +1,4 @@
-//此文件由工具自动生成，请勿直接修改！
+// 此文件由工具自动生成，请勿直接修改！
 
 #include "infrastructure/config/AppConfig.h"
 
@@ -68,6 +68,16 @@ namespace dorm_alloc
                         cfg.mysql.password = m.at("password").get<std::string>();
                     if (m.contains("database"))
                         cfg.mysql.database = m.at("database").get<std::string>();
+                }
+
+                // logging
+                if (j.contains("logging"))
+                {
+                    const auto &l = j.at("logging");
+                    if (l.contains("log_dir"))
+                        cfg.logging.log_dir = l.at("log_dir").get<std::string>();
+                    if (l.contains("level"))
+                        cfg.logging.level = l.at("level").get<std::string>();
                 }
 
                 return cfg;

@@ -1,4 +1,5 @@
 #include "algorithm/MatchEngine.h"
+#include "infrastructure/log/Logger.h"
 
 #include <algorithm>
 #include <chrono>
@@ -633,6 +634,9 @@ namespace dorm_alloc
             auto students = LoadStudentProfiles(db, college, major, gender);
             auto dorms = LoadDormitories(db, gender);
 
+            LOG_INFO("MatchEngine::ExecuteAllocation: {} students, {} dorms, college={}, major={}, gender={}",
+                     students.size(), dorms.size(), college, major, gender);
+
             if (students.empty())
             {
                 throw std::runtime_error("No students found for the given criteria.");
@@ -644,6 +648,7 @@ namespace dorm_alloc
 
             // Run greedy assignment
             auto results = GreedyAssign(students, dorms);
+            LOG_INFO("MatchEngine::ExecuteAllocation: {} results generated", results.size());
 
             // Save results to database
             for (const auto &r : results)
@@ -676,6 +681,8 @@ namespace dorm_alloc
 
                 db.Execute(sql.str());
             }
+
+            LOG_INFO("MatchEngine::ExecuteAllocation: saving {} results to database", results.size());
 
             // Update task status
             db.Execute(

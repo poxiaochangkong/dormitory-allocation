@@ -9,5 +9,9 @@
         "user": "root",
         "password": "root",
         "database": "dorm_alloc"
+    },
+    "logging": {
+        "log_dir": "./log/",
+        "level": "info"
     }
 }

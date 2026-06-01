@@ -10,6 +10,7 @@
 
 #include "algorithm/MatchEngine.h"
 #include "infrastructure/auth/CryptoUtil.h"
+#include "infrastructure/log/Logger.h"
 
 namespace dorm_alloc
 {
@@ -47,6 +48,7 @@ namespace dorm_alloc
             const std::string &student_no,
             const std::string &password)
         {
+            LOG_DEBUG("AdminService::Login: studentNo={}", student_no);
             // Look up admin by student_no, retrieve stored hash and salt
             auto rs = db.ExecuteQuery(
                 "SELECT user_id, role, gender, password, salt "
@@ -56,6 +58,7 @@ namespace dorm_alloc
 
             if (!rs->next())
             {
+                LOG_WARN("AdminService::Login: user not found or not admin, studentNo={}", student_no);
                 throw std::runtime_error("Invalid admin credentials.");
             }
 
@@ -65,6 +68,7 @@ namespace dorm_alloc
 
             if (!dorm_alloc::infra::auth::CryptoUtil::VerifyPassword(password, salt, stored_hash))
             {
+                LOG_WARN("AdminService::Login: password mismatch, studentNo={}", student_no);
                 throw std::runtime_error("Invalid admin credentials.");
             }
 
@@ -93,6 +97,7 @@ namespace dorm_alloc
             result["role"] = rs->getString("role").asStdString();
             result["gender"] = rs->getString("gender").asStdString();
             result["token"] = token;
+            LOG_INFO("AdminService::Login: success, userId={}", user_id);
             return result.dump();
         }
 

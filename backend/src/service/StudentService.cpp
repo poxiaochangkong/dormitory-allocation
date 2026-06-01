@@ -9,6 +9,7 @@
 #include <mysql/jdbc.h>
 
 #include "infrastructure/auth/CryptoUtil.h"
+#include "infrastructure/log/Logger.h"
 
 namespace dorm_alloc
 {
@@ -110,6 +111,7 @@ namespace dorm_alloc
             const std::string &student_no,
             const std::string &password)
         {
+            LOG_DEBUG("StudentService::Login: studentNo={}", student_no);
             // Look up user by student_no, retrieve stored hash and salt
             auto rs = db.ExecuteQuery(
                 "SELECT user_id, role, gender, college, major, grade, dorm_type, password, salt "
@@ -119,6 +121,7 @@ namespace dorm_alloc
 
             if (!rs->next())
             {
+                LOG_WARN("StudentService::Login: user not found, studentNo={}", student_no);
                 throw std::runtime_error("Invalid student number or password.");
             }
 
@@ -128,6 +131,7 @@ namespace dorm_alloc
 
             if (!dorm_alloc::infra::auth::CryptoUtil::VerifyPassword(password, salt, stored_hash))
             {
+                LOG_WARN("StudentService::Login: password mismatch, studentNo={}", student_no);
                 throw std::runtime_error("Invalid student number or password.");
             }
 
@@ -150,6 +154,7 @@ namespace dorm_alloc
             result["grade"] = rs->getString("grade").asStdString();
             result["dormType"] = rs->getInt("dorm_type");
             result["token"] = token;
+            LOG_INFO("StudentService::Login: success, userId={}", user_id);
             return result.dump();
         }
 
@@ -227,6 +232,7 @@ namespace dorm_alloc
             const std::string &user_id,
             const std::string &data_json)
         {
+            LOG_INFO("StudentService::SubmitQuestionnaire: userId={}", user_id);
             auto data = nlohmann::json::parse(data_json);
 
             // Determine if this is frontend format or backend format
@@ -429,6 +435,7 @@ namespace dorm_alloc
 
             nlohmann::json result;
             result["questionnaireId"] = qid;
+            LOG_INFO("StudentService::SubmitQuestionnaire: saved, qid={}", qid);
             return result.dump();
         }
 
@@ -441,6 +448,7 @@ namespace dorm_alloc
             const std::string &user_id,
             const std::string &data_json)
         {
+            LOG_INFO("StudentService::SubmitSceneData: userId={}", user_id);
             auto data = nlohmann::json::parse(data_json);
 
             // Store scene data in open_text_profile or a separate mechanism.
@@ -504,6 +512,7 @@ namespace dorm_alloc
             MySqlClient &db,
             const std::string &user_id)
         {
+            LOG_DEBUG("StudentService::GetMatchResult: userId={}", user_id);
             auto rs = db.ExecuteQuery(
                 "SELECT mr.result_id, mr.task_id, mr.dorm_id, mr.roommate_ids, "
                 "  mr.total_score, mr.similarity_score, mr.complementarity_score, "
@@ -612,6 +621,7 @@ namespace dorm_alloc
             MySqlClient &db,
             const std::string &register_json)
         {
+            LOG_INFO("StudentService::Register: starting");
             auto data = nlohmann::json::parse(register_json);
 
             std::string student_no = data.value("studentNo", "");
@@ -662,6 +672,7 @@ namespace dorm_alloc
             result["userId"] = user_id;
             result["studentNo"] = student_no;
             result["role"] = "student";
+            LOG_INFO("StudentService::Register: success, userId={}, studentNo={}", user_id, student_no);
             return result.dump();
         }
 

@@ -75,6 +75,7 @@ target_sources(dorm_alloc_core
     src/infrastructure/db/MySqlClient.cpp
     src/infrastructure/db/DbBootstrapper.cpp
     src/infrastructure/auth/CryptoUtil.cpp
+    src/infrastructure/log/Logger.cpp
     src/algorithm/MatchEngine.cpp
     src/service/StudentService.cpp
     src/service/AdminService.cpp

@@ -1,9 +1,7 @@
-//此文件为宿舍分配系统的后端CLI工具，提供基本的命令行接口用于调试和验证数据库连接等功能。
-//主要功能包括：
+// 此文件为宿舍分配系统的后端CLI工具，提供基本的命令行接口用于调试和验证数据库连接等功能。
+// 主要功能包括：
 //- health: 打印系统的存活状态，输出 "OK"。
 //- db ping: 尝试连接到MySQL数据库，并确保指定的数据库存在，如果成功则输出相关信息。
-
-
 
 #include <iostream>
 
@@ -12,6 +10,7 @@
 #include "infrastructure/config/AppConfig.h"
 #include "infrastructure/db/DbBootstrapper.h"
 #include "infrastructure/db/MySqlClient.h"
+#include "infrastructure/log/Logger.h"
 
 // Minimal CLI for backend debugging without frontend.
 //
@@ -56,6 +55,7 @@ int main(int argc, char **argv)
         if (cmd_db_ping)
         {
             const auto cfg = dorm_alloc::infra::config::LoadFromJsonFile(config_path);
+            dorm_alloc::infra::log::InitLogger(cfg.logging.log_dir, cfg.logging.level);
 
             dorm_alloc::infra::db::MySqlClient client(cfg.mysql);
             client.ConnectServer();

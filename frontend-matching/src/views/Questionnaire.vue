@@ -201,8 +201,19 @@ const submitForm = async () => {
   }
 
   // Validate required fields
-  if (!form.traditionalHabits.q02_sleepTime) {
-    return ElMessage.warning('请选择入睡时间')
+  const req = [
+    [form.basicInfo.gender, '性别'],
+    [form.basicInfo.college, '学院'],
+    [form.basicInfo.major, '专业'],
+    [form.traditionalHabits.q02_sleepTime, '入睡时间'],
+    [form.traditionalHabits.q06_hygiene, '个人卫生水平'],
+    [form.personality.p21_mbti, 'MBTI类型'],
+    [form.personality.p22_socialEnergy, '社交偏好'],
+  ]
+  for (const [val, name] of req) {
+    if (!val || (typeof val === 'string' && !val.trim())) {
+      return ElMessage.warning(`请完成：「${name}」`)
+    }
   }
 
   submitting.value = true

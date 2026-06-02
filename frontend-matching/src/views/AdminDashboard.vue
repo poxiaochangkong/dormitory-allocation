@@ -454,18 +454,30 @@ const handleViewResult = async (task) => {
 // Load dashboard statistics: total students and free beds
 const loadDashboardStats = async () => {
   try {
-    const [usersData, dormsData] = await Promise.all([listUsers(), listDormitories()])
-    const userList = Array.isArray(usersData?.users) ? usersData.users : (Array.isArray(usersData) ? usersData : [])
+    const [usersData, dormsData, tasksData] = await Promise.all([listUsers(), listDormitories(), listTasks()])
+    const users = Array.isArray(usersData?.users) ? usersData.users : (Array.isArray(usersData) ? usersData : [])
     const dormList = Array.isArray(dormsData?.dormitories) ? dormsData.dormitories : (Array.isArray(dormsData) ? dormsData : [])
+    const taskList = Array.isArray(tasksData?.tasks) ? tasksData.tasks : (Array.isArray(tasksData) ? tasksData : [])
 
     // Count students (non-admin users)
-    stats.totalStudents = userList.filter(u => u.role !== 'admin').length
+    stats.totalStudents = users.filter(u => u.role !== 'admin').length
 
-    // Sum up available capacity from all dormitories
-    stats.freeBeds = dormList.reduce((sum, d) => sum + (d.capacity || 0), 0)
+    // freeBeds = total capacity - allocated students (from latest completed task)
+    const totalCapacity = dormList.reduce((sum, d) => sum + (d.capacity || 0), 0)
+    const latestCompleted = taskList.filter(t => t.status === 'completed').sort(
+      (a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')
+    )[0]
+    let allocatedCount = 0
+    if (latestCompleted) {
+      try {
+        const resultData = await getTaskResult(latestCompleted.taskId)
+        const results = Array.isArray(resultData?.allocations) ? resultData.allocations : (Array.isArray(resultData) ? resultData : [])
+        allocatedCount = results.length
+      } catch (_) { /* ignore */ }
+    }
+    stats.freeBeds = totalCapacity - allocatedCount
   } catch (err) {
     console.error('Load dashboard stats failed:', err)
-    // Stats will remain 0 if API fails — acceptable fallback
   }
 }
 

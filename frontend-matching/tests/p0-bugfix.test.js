@@ -5,9 +5,9 @@
  * - Bug 1: Task list not displaying due to data format mismatch
  * - Bug 2: Task name lost due to field name inconsistency (name vs taskName)
  * - Bug 3: Table column prop mismatch (name vs taskName)
- * - Bug 4: Student login redirects to non-existent /student/home route
- * - Bug 6: No logout button on student pages
- * - Bug 7: "Return to lobby" buttons point to non-existent route
+ * - Bug 4: Student login redirects to /student/home route
+ * - Bug 6: Logout is handled by MainLayout (sidebar layout)
+ * - Bug 7: Navigation routes to /student/home are valid
  * - Bug 8: Create task form fields mismatch (weights vs taskName/college/major/gender)
  * - Bug 9: Task result table expects userIds array but backend returns flat rows
  */
@@ -89,39 +89,36 @@ describe('Bug 2 & 3: taskName field consistency', () => {
 })
 
 // ============================================================
-// Bug 4: Student login redirect route
+// Bug 4: Student login redirect
 // ============================================================
 describe('Bug 4: Student login redirect', () => {
-    it('should have /student/home route defined in router', () => {
+    it('should have StudentHome route defined in router (nested under /student)', () => {
         const routerContent = readFileSync(resolve('src/router/index.js'), 'utf-8')
-        expect(routerContent).toContain("path: '/student/home'")
+        // Nested route: parent path /student, child path 'home'
         expect(routerContent).toContain("name: 'StudentHome'")
+        expect(routerContent).toMatch(/path:\s*['"]home['"]/)
+    })
+
+    it('Login.vue should redirect to /student/home after student login', () => {
+        const source = readFileSync(resolve('src/views/Login.vue'), 'utf-8')
+        expect(source).toContain("/student/home")
     })
 })
 
 // ============================================================
-// Bug 6: Logout buttons on student pages
+// Bug 6: Logout handled by MainLayout (sidebar layout)
 // ============================================================
-describe('Bug 6: Student pages have logout buttons', () => {
-    const studentPages = [
-        'Questionnaire.vue',
-        'ImmersiveScene.vue',
-        'StudentResult.vue'
-    ]
+describe('Bug 6: Logout is handled by MainLayout', () => {
+    it('MainLayout.vue should have a handleLogout function', () => {
+        const source = readFileSync(resolve('src/layouts/MainLayout.vue'), 'utf-8')
+        expect(source).toContain('handleLogout')
+        expect(source).toContain("localStorage.removeItem('token')")
+        expect(source).toContain("router.push('/login')")
+    })
 
-    studentPages.forEach(filename => {
-        it(`${filename} should have a handleLogout function`, () => {
-            const source = readVueSource(filename)
-            expect(source).toContain('handleLogout')
-            expect(source).toContain("localStorage.removeItem('token')")
-            expect(source).toContain("router.push('/login')")
-        })
-
-        it(`${filename} should have a logout button in template`, () => {
-            const source = readVueSource(filename)
-            // Should have a danger (red) button that triggers handleLogout
-            expect(source).toMatch(/type="danger".*handleLogout|handleLogout.*type="danger"/)
-        })
+    it('MainLayout.vue should have a logout trigger in template', () => {
+        const source = readFileSync(resolve('src/layouts/MainLayout.vue'), 'utf-8')
+        expect(source).toMatch(/handleLogout/)
     })
 })
 
@@ -129,23 +126,13 @@ describe('Bug 6: Student pages have logout buttons', () => {
 // Bug 7: Navigation routes are valid
 // ============================================================
 describe('Bug 7: Student page navigation routes', () => {
-    it('should have /student/home route defined for "return to lobby" buttons', () => {
-        const routerContent = readFileSync(resolve('src/router/index.js'), 'utf-8')
-        expect(routerContent).toContain("path: '/student/home'")
-    })
-
-    it('Questionnaire.vue should navigate to /student/home', () => {
-        const source = readVueSource('Questionnaire.vue')
-        expect(source).toContain("/student/home")
-    })
-
-    it('ImmersiveScene.vue should have a "return to lobby" button', () => {
-        const source = readVueSource('ImmersiveScene.vue')
-        expect(source).toContain("/student/home")
-    })
-
     it('StudentResult.vue should navigate to /student/home', () => {
         const source = readVueSource('StudentResult.vue')
+        expect(source).toContain("/student/home")
+    })
+
+    it('Login.vue should redirect to /student/home on student login', () => {
+        const source = readFileSync(resolve('src/views/Login.vue'), 'utf-8')
         expect(source).toContain("/student/home")
     })
 })

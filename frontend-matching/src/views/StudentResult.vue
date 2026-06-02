@@ -8,7 +8,8 @@
     </div>
 
     <!-- No Result -->
-    <el-empty v-else-if="!result" description="暂无分配结果，请确保管理员已执行分配任务">
+    <el-empty v-else-if="!result" description="暂无分配结果">
+      <p style="color:#909399;font-size:13px;margin-bottom:16px;">请先在大厅完成全部 5 步问卷，然后由管理员执行分配任务</p>
       <el-button type="primary" @click="$router.push('/student/home')">返回大厅</el-button>
     </el-empty>
 

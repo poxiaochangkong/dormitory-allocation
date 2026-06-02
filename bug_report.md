@@ -1,8 +1,9 @@
 # Bug Report
 
-> 生成时间：2026-06-02（全面更新）
+> 更新时间：2026-06-02 晚（前端体验修复轮）
 > 范围：前后端对接问题、静态代码分析发现的 bug、项目功能可行性评估
 > 说明：仅列出未修复的 bug，基于对全部源代码的静态分析
+> 本次修复：B4, B5, B6, C8, M8, M9, M10, L5, L6, L8, L9 — 11 个 bug 已修复
 
 ---
 
@@ -46,10 +47,20 @@
 ### 待完成工作
 1. **分配规则配置UI** — 后端已有 `POST /api/admin/allocation/rule/save`，前端缺少配置页面
 2. **沉浸式场景数据未参与匹配** — 收集了9个维度数据但算法完全未使用
-3. **问卷数据回填** — 已提交问卷的学生再次进入页面时表单为空
+3. **问卷数据回填** — 已提交问卷的学生再次进入 Questionnaire 页面时表单为空
 4. **问卷模板API未对接** — 后端有 `GET /api/student/questionnaire/template` 但前端无API函数
 5. **问卷状态检查未使用** — 前端已定义 `getQuestionnaireStatus()` 但从未调用
 6. **学生信息API未使用** — 前端已定义 `getStudentInfo()` 但从未调用
+
+### 已修复（2026-06-02）
+- ✅ 学生登录跳转路径 (B4+M10)
+- ✅ freeBeds 空闲床位计算 (B5+L9)
+- ✅ 问卷表单验证 (B6)
+- ✅ 注册后自动登录 (L5)
+- ✅ StudentResult 空状态引导 (L6)
+- ✅ ImmersiveScene 按钮文案 + loading (M9+L8)
+- ✅ StudentHome 步骤指示器动态化 (M8)
+- ✅ AdminAdjust CDATA 标记 (C8)
 
 ### 项目功能可行性判断
 
@@ -153,19 +164,7 @@ if (!college.empty())
 
 ---
 
-### C8. `AdminAdjust.vue` 文件包含 `<![CDATA[` 和 `]]>` 标记
-
-**文件**: `frontend-matching/src/views/AdminAdjust.vue` (第1行和第269行)
-
-**描述**: 文件开头有 `<![CDATA[`，结尾有 `]]>`。这是 XML 标记，不是合法的 Vue SFC 语法。虽然 Vue 模板编译器可能忽略它们，但会导致潜在的解析问题。
-
-```html
-<![CDATA[<!-- AdminAdjust.vue -->
-...
-]]>
-```
-
-**影响**: 可能导致 Vue SFC 解析异常或编译警告。应移除这些标记。
+### C8. `AdminAdjust.vue` 文件包含 `<![CDATA[` 和 `]]>` 标记 ✅ 已修复 (2026-06-02)
 
 ---
 
@@ -240,49 +239,17 @@ sql << "INSERT INTO questionnaire "
 
 ---
 
-### B4. 学生登录后跳转到问卷页而非大厅
-
-**文件**: `Login.vue` (第132行)
-
-**描述**: 学生登录成功后直接跳转到 `/student/questionnaire`，应跳转到 `/student/home`（大厅），让用户自主选择先做哪个问卷。
-
-```javascript
-// 当前代码
-router.push('/student/questionnaire')
-// 应改为
-router.push('/student/home')
-```
-
-**影响**: 学生登录后直接进入问卷页，无法选择沉浸式场景问卷。
-
-同样，路由守卫中已登录学生重定向也指向问卷页（`router/index.js` 第36行）：
-```javascript
-return next('/student/questionnaire')  // 应改为 '/student/home'
-```
+### B4. 学生登录后跳转到问卷页而非大厅 ✅ 已修复 (2026-06-02)
 
 ---
 
-### B5. AdminDashboard `freeBeds` 计算的是总床位数而非空闲床位数
-
-**文件**: `AdminDashboard.vue` (第313行)
-
-**描述**: 当前计算方式为所有宿舍 capacity 之和：
-```javascript
-stats.freeBeds = dormList.reduce((sum, d) => sum + (d.capacity || 0), 0)
-```
-这计算的是总床位数，而非减去已分配学生后的空闲床位数。
-
-**影响**: 管理员看到的"空闲宿舍床位"数据不准确。
+### B5. AdminDashboard `freeBeds` 计算的是总床位数而非空闲床位数 ✅ 已修复 (2026-06-02)
+— 改为 `totalCapacity - 最新已完成任务的已分配学生数`，同时修复 L9 变量遮蔽
 
 ---
 
-### B6. Questionnaire.vue 只验证了 q02_sleepTime 一个字段
-
-**文件**: `Questionnaire.vue` (第204行)
-
-**描述**: 提交问卷时仅验证入睡时间（`q02_sleepTime`）是否填写，其他必填字段（性别、学院、专业等）均未验证。
-
-**影响**: 用户可以提交不完整的问卷数据。
+### B6. Questionnaire.vue 只验证了 q02_sleepTime 一个字段 ✅ 已修复 (2026-06-02)
+— 扩展为 7 个必填项验证：性别、学院、专业、入睡时间、卫生水平、MBTI、社交偏好
 
 ---
 
@@ -455,43 +422,17 @@ result["scheduleOverlapScore"] = sim_score * 0.85 + 0.1;
 
 ---
 
-### M8. StudentHome.vue 步骤指示器硬编码为阶段1
-
-**文件**: `frontend-matching/src/views/StudentHome.vue` (第9行)
-
-**描述**: `<el-steps :active="1" ...>` 硬编码为1，不根据学生完成状态动态变化。
-
-**影响**: 无论学生完成了多少问卷，步骤指示器始终显示"阶段1"高亮。
+### M8. StudentHome.vue 步骤指示器硬编码为阶段1 ✅ 已修复
+— 已改为 `:active="activeStep"` 动态绑定
 
 ---
 
-### M9. ImmersiveScene.vue 按钮文案误导
-
-**文件**: `frontend-matching/src/views/ImmersiveScene.vue` (第32行)
-
-**描述**: 按钮文案为"全部采集完成，开始AI匹配"，但实际上点击只是提交场景数据，不会触发匹配算法。匹配需要管理员在后台手动执行。
-
-```html
-<el-button type="success" size="large" @click="finishScene">全部采集完成，开始AI匹配</el-button>
-```
-
-**影响**: 用户误以为点击后会自动开始匹配，实际需要等待管理员操作。
+### M9. ImmersiveScene.vue 按钮文案误导 ✅ 已修复
+— 已改为 "完成 → 进入权重调节"
 
 ---
 
-### M10. 前端 router 守卫中已登录学生重定向路径错误
-
-**文件**: `frontend-matching/src/router/index.js` (第36行)
-
-**描述**: 已登录学生访问登录页时重定向到 `/student/questionnaire` 而非 `/student/home`：
-```javascript
-if (token) {
-  if (role === 'admin') return next('/admin/dashboard')
-  return next('/student/questionnaire')  // 应改为 '/student/home'
-}
-```
-
-**影响**: 与 B4 同，学生无法从登录页直接进入大厅。
+### M10. 前端 router 守卫中已登录学生重定向路径错误 ✅ 已修复 (2026-06-02)
 
 ---
 
@@ -558,19 +499,13 @@ result["token"] = token;
 
 ---
 
-### L5. 注册成功后不自动登录
-
-**文件**: `Login.vue` (第158行)
-
-**描述**: 注册成功后仅显示成功消息并自动填入学号，用户仍需手动输入密码登录。
+### L5. 注册成功后不自动登录 ✅ 已修复 (2026-06-02)
+— 注册成功后自动调用登录并跳转
 
 ---
 
-### L6. StudentResult 空状态缺少引导
-
-**文件**: `StudentResult.vue`
-
-**描述**: 未分配时只显示"暂无分配结果，请等待管理员执行分配任务"，缺少引导用户完成问卷的提示。
+### L6. StudentResult 空状态缺少引导 ✅ 已修复 (2026-06-02)
+— 增加引导文字"请先在大厅完成全部 5 步问卷，然后由管理员执行分配任务"
 
 ---
 
@@ -587,41 +522,13 @@ result["token"] = token;
 
 ---
 
-### L8. `ImmersiveScene.vue` 按钮未绑定 loading 状态
-
-**文件**: `frontend-matching/src/views/ImmersiveScene.vue` (第32行)
-
-**描述**: `submitting` ref 已声明（第62行），`finishScene` 方法中正确设置了 `submitting.value = true/false`，但提交按钮未绑定 `:loading="submitting"`。用户点击按钮后无视觉反馈，可能重复点击导致多次提交。
-
-```html
-<!-- 当前代码：无 loading 绑定 -->
-<el-button type="success" size="large" @click="finishScene">全部采集完成，开始AI匹配</el-button>
-<!-- 应改为 -->
-<el-button type="success" size="large" @click="finishScene" :loading="submitting">全部采集完成，开始AI匹配</el-button>
-```
-
-**影响**: 用户无提交反馈，可能重复点击。
+### L8. `ImmersiveScene.vue` 按钮未绑定 loading 状态 ✅ 已修复
+— `:loading="submitting"` 已绑定
 
 ---
 
-### L9. `AdminDashboard.vue` 局部变量遮蔽外部 ref
-
-**文件**: `frontend-matching/src/views/AdminDashboard.vue` — `loadDashboardStats()` (第306行)
-
-**描述**: 函数内声明了 `const userList` 遮蔽了外部的 `const userList = ref([])`（第205行）。虽然当前不影响功能（函数内使用局部变量，外部 ref 通过 `loadUserList()` 单独更新），但容易在后续维护中引发 bug。
-
-```javascript
-// 外部
-const userList = ref([])          // 第205行
-
-// 函数内局部变量同名
-const loadDashboardStats = async () => {
-  const [usersData, dormsData] = await Promise.all([...])
-  const userList = ...  // 第306行 — 遮蔽外部 ref
-}
-```
-
-**影响**: 当前无功能影响，但代码可读性差，后续修改容易误用变量。
+### L9. `AdminDashboard.vue` 局部变量遮蔽外部 ref ✅ 已修复 (2026-06-02)
+— 局部变量 `userList` 重命名为 `users`，随 B5 一并修复
 
 ---
 
@@ -657,7 +564,7 @@ const loadDashboardStats = async () => {
 
 ## 修复建议（按优先级）
 
-### 🔴 必须修复（影响安全性或数据正确性）
+### 🔴 必须修复（影响安全性或数据正确性）— 7 项
 
 1. **C9**: `SubmitQuestionnaire` 改为 `INSERT ... ON DUPLICATE KEY UPDATE`，防止问卷重复行导致同一学生被多次匹配
 2. **C5**: `AuthenticateRequest` 中 token 应使用 `Escape()` 转义
@@ -666,38 +573,44 @@ const loadDashboardStats = async () => {
 5. **C2 + M1**: 使用 CSPRNG 生成 Token（`std::random_device` + `std::mt19937`）
 6. **C3 + M11**: `AdjustResult` 添加 roommate_ids 重算逻辑，同时更新 explanation_text
 7. **C4**: `ImportStudents` 区分新增和更新的计数
-8. **C1**: 长期改用 prepared statements 参数绑定
-9. **C8**: 移除 AdminAdjust.vue 的 `<![CDATA[` 和 `]]>` 标记
 
-### 🟠 功能完善（影响核心功能）
+### 🟠 功能完善（影响核心功能）— 6 项
 
-10. **B1**: 将沉浸式场景数据整合到匹配算法中
-11. **B2**: 补充前端问卷字段映射（noise_tolerance, temperature_preference, gaming_behavior）
-12. **B8**: `RunTask` 添加 try-catch，异常时将 status 设为 'failed'
-13. **B3**: 将匹配算法改为异步执行或使用独立线程
-14. **B10**: 改进贪心算法，确保宿舍尽量住满
-15. **B11**: `SubmitSceneData` 在无问卷时应返回错误而非静默丢弃
-16. **B12**: `DeleteTask` 添加 `status != 'running'` 检查
+8. **B1**: 将沉浸式场景数据整合到匹配算法中
+9. **B2**: 补充前端问卷字段映射（noise_tolerance, temperature_preference, gaming_behavior）
+10. **B8**: `RunTask` 添加 try-catch，异常时将 status 设为 'failed'
+11. **B3**: 将匹配算法改为异步执行或使用独立线程
+12. **B10**: 改进贪心算法，确保宿舍尽量住满
+13. **B11**: `SubmitSceneData` 在无问卷时应返回错误而非静默丢弃
+14. **B12**: `DeleteTask` 添加 `status != 'running'` 检查
 
-### 🟡 用户体验优化
+### 🟡 用户体验优化 — 4 项
 
-17. **B4 + M10**: 学生登录后跳转到 `/student/home`
-18. **B5**: `freeBeds` 计算减去已分配学生数
-19. **B6**: Questionnaire 添加完整表单验证
-20. **B7**: Questionnaire 加载已提交数据回填
-21. **M5**: `ListTasks` / `ListDormitories` 添加认证
-22. **M8**: StudentHome 步骤指示器动态化
-23. **M9 + L8**: ImmersiveScene 按钮文案修正，添加 `:loading="submitting"` 绑定
-24. **M12**: AdminLogin 响应补充 `college/major/grade/dormType` 字段
+15. **B7**: Questionnaire 加载已提交数据回填
+16. **M5**: `ListTasks` / `ListDormitories` 添加认证
+17. **M12**: AdminLogin 响应补充 `college/major/grade/dormType` 字段
+18. **B9**: RunTask 前端超时 30 秒可能不够，建议增大或改用轮询
 
-### 🔵 代码质量
+### 🔵 代码质量 — 8 项
 
-25. **M2**: 改用 UUID 或自增 ID
-26. **M4**: 移除虚假子分数或实现真实的子维度评分
-27. **M6**: CSV 导出使用标准转义（双引号包裹含逗号的字段）
-28. **M7**: `SaveAllocationRule` 使用 prepared statement 或更完善的转义
-29. **L2**: 添加登录速率限制
-30. **L3**: 考虑连接池替代单锁
-31. **L4**: 添加 Token 过期机制
-32. **L7**: 完善问卷以收集否决项推导所需数据（吸烟、宠物等）
-33. **L9**: `AdminDashboard` 局部变量 `userList` 重命名为 `users` 避免遮蔽外部 ref
+19. **M2**: 改用 UUID 或自增 ID
+20. **M4**: 移除虚假子分数或实现真实的子维度评分
+21. **M6**: CSV 导出使用标准转义（双引号包裹含逗号的字段）
+22. **M7**: `SaveAllocationRule` 使用 prepared statement 或更完善的转义
+23. **L1**: 注册添加密码强度校验
+24. **L2**: 添加登录速率限制
+25. **L3**: 考虑连接池替代单锁
+26. **L4**: 添加 Token 过期机制
+27. **L7**: 完善问卷以收集否决项推导所需数据（吸烟、宠物等）
+
+### ✅ 已修复（2026-06-02 前端体验修复轮）— 11 项
+
+- C8: CDATA 已移除
+- B4 + M10: 登录跳转 `/student/home`
+- B5 + L9: freeBeds 正确计算 + 变量遮蔽
+- B6: 7 项必填验证
+- M8: 步骤指示器动态化
+- M9: 按钮文案修正
+- L5: 注册自动登录
+- L6: 空状态引导
+- L8: loading 绑定

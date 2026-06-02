@@ -155,11 +155,13 @@ const handleRegister = async () => {
     const { studentNo, password, gender, college, major, grade } = regForm
     const res = await studentRegister({ studentNo, password, gender, college, major, grade })
 
-    ElMessage.success('注册成功！请登录')
-    // Auto-fill login form with registered student number
+    ElMessage.success('注册成功，自动登录中...')
+    // Auto-login with the registered credentials
     username.value = regForm.studentNo
-    password.value = ''
+    password.value = regForm.password
+    activeRole.value = 'student'
     showRegister.value = false
+    await handleLogin()
   } catch (err) {
     console.error('Register failed:', err)
   } finally {

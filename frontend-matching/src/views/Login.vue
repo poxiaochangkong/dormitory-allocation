@@ -128,8 +128,8 @@ const handleLogin = async () => {
       ElMessage.success('管理员欢迎回来')
       router.push('/admin/dashboard')
     } else {
-      ElMessage.success('登录成功，请开始填写问卷')
-      router.push('/student/questionnaire')
+      ElMessage.success('登录成功')
+      router.push('/student/home')
     }
   } catch (err) {
     // Error already handled by axios interceptor (ElMessage.error)

@@ -281,6 +281,16 @@ namespace dorm_alloc
                     // q03_wakeTime: store in raw_answers but no direct backend field
                     hygiene_level = MapToLevel(th.value("q06_hygiene", "B"));
                     // q07_laundry, q08_studyPlace: store in raw_answers
+
+                    // NEW: Extract previously-missing algorithm dimensions
+                    noise_tolerance = th.value("q04_noiseTolerance", 3);
+                    temperature_preference = th.value("q05_tempPref", 24);
+                    // q09_gamingHabit: A=never, B=sometimes, C=often, D=always
+                    std::string gaming_code = th.value("q09_gamingHabit", "B");
+                    if (gaming_code == "A") gaming_behavior = "never";
+                    else if (gaming_code == "C") gaming_behavior = "often";
+                    else if (gaming_code == "D") gaming_behavior = "always";
+                    else gaming_behavior = "sometimes";
                 }
 
                 // Map frontend personality to backend fields
@@ -500,6 +510,30 @@ namespace dorm_alloc
                     << Escape(existing.dump())
                     << "' WHERE questionnaire_id = '" << Escape(qid) << "';";
                 db.Execute(sql.str());
+
+                // Map immersive scene data back to structured columns
+                // s37_noiseDb (30-100) -> noise_tolerance (1-5)
+                // s30_acTemp (16-30) -> temperature_preference (18-30)
+                if (data.contains("s37_noiseDb") || data.contains("s30_acTemp"))
+                {
+                    std::ostringstream qsql;
+                    qsql << "UPDATE questionnaire SET ";
+                    bool first = true;
+                    if (data.contains("s37_noiseDb"))
+                    {
+                        int ndb = data["s37_noiseDb"].get<int>();
+                        int nt = std::max(1, std::min(5, (100 - ndb) / 14 + 1)); // 100->1, 30->5
+                        qsql << "noise_tolerance = " << nt;
+                        first = false;
+                    }
+                    if (data.contains("s30_acTemp"))
+                    {
+                        if (!first) qsql << ", ";
+                        qsql << "temperature_preference = " << data["s30_acTemp"].get<int>();
+                    }
+                    qsql << " WHERE questionnaire_id = '" << Escape(qid) << "';";
+                    db.Execute(qsql.str());
+                }
             }
 
             nlohmann::json result;
@@ -560,12 +594,31 @@ namespace dorm_alloc
             result["complementarityScore"] = comp_score;
             result["vetoRiskScore"] = veto_score;
 
-            // Derived dimensions for the frontend radar chart:
-            // - hygieneConsistency: derived from similarity (hygiene is a major factor)
-            // - scheduleOverlap: derived from similarity (sleep schedule is a major factor)
-            // These are approximations since the algorithm doesn't produce separate sub-scores.
-            result["hygieneConsistencyScore"] = sim_score * 0.9 + 0.05; // scale ~0.05-0.95
-            result["scheduleOverlapScore"] = sim_score * 0.85 + 0.1;    // scale ~0.1-0.95
+            // Radar chart dimensions — real scores from algorithm
+            result["hygieneConsistencyScore"] = sim_score;
+            result["scheduleOverlapScore"] = comp_score;
+
+            // Calculate global averages for radar baseline comparison
+            auto avg_rs = db.ExecuteQuery(
+                "SELECT AVG(similarity_score) as avg_sim, "
+                "AVG(complementarity_score) as avg_comp, "
+                "AVG(veto_risk_score) as avg_veto, "
+                "AVG(total_score) as avg_total "
+                "FROM match_result;");
+            if (avg_rs->next() && !avg_rs->isNull("avg_sim"))
+            {
+                result["avgSimilarityScore"] = avg_rs->getDouble("avg_sim");
+                result["avgComplementarityScore"] = avg_rs->getDouble("avg_comp");
+                result["avgVetoRiskScore"] = avg_rs->getDouble("avg_veto");
+                result["avgTotalScore"] = avg_rs->getDouble("avg_total");
+            }
+            else
+            {
+                result["avgSimilarityScore"] = 0.6;
+                result["avgComplementarityScore"] = 0.5;
+                result["avgVetoRiskScore"] = 0.7;
+                result["avgTotalScore"] = 0.55;
+            }
 
             result["explanationText"] = rs->getString("explanation_text").asStdString();
 

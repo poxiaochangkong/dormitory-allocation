@@ -13,6 +13,8 @@
 
 #include <mysql/jdbc.h>
 
+#include <nlohmann/json.hpp>
+
 namespace dorm_alloc
 {
     namespace algorithm
@@ -41,7 +43,7 @@ namespace dorm_alloc
                 "SELECT u.user_id, u.gender, u.college, u.major, u.dorm_type, "
                 "  q.sleep_schedule, q.hygiene_level, q.noise_tolerance, "
                 "  q.temperature_preference, q.social_preference, "
-                "  q.gaming_behavior, q.mbti_type, "
+                "  q.gaming_behavior, q.mbti_type, q.raw_answers, "
                 "  p.similarity_weight, p.complementarity_weight, p.veto_safety_weight "
                 "FROM `user` u "
                 "INNER JOIN questionnaire q ON u.user_id = q.user_id "
@@ -74,6 +76,7 @@ namespace dorm_alloc
                 p.social_preference = rs->getInt("social_preference");
                 p.gaming_behavior = rs->getString("gaming_behavior").asStdString();
                 p.mbti_type = rs->getString("mbti_type").asStdString();
+                p.raw_answers = rs->getString("raw_answers").asStdString();
 
                 // Preference weights may be NULL (LEFT JOIN)
                 p.similarity_weight = rs->getDouble("similarity_weight");
@@ -311,8 +314,29 @@ namespace dorm_alloc
         {
             std::vector<std::string> tags;
 
-            // smoke_alcohol: questionnaire doesn't collect this directly,
-            // so we cannot derive it from available data.
+            // Parse raw_answers JSON to get explicit behavior flags
+            nlohmann::json raw;
+            bool has_raw = false;
+            if (!p.raw_answers.empty())
+            {
+                try { raw = nlohmann::json::parse(p.raw_answers); has_raw = true; }
+                catch (...) {}
+            }
+
+            // Navigate to traditionalHabits if this is frontend format
+            nlohmann::json th;
+            if (has_raw && raw.contains("traditionalHabits"))
+                th = raw["traditionalHabits"];
+            else if (has_raw)
+                th = raw;
+
+            // smoke_alcohol: from q10_smokeStatus (often/sometimes)
+            if (has_raw)
+            {
+                std::string smoke = th.value("q10_smokeStatus", "");
+                if (smoke == "often" || smoke == "sometimes")
+                    tags.push_back("smoke_alcohol");
+            }
 
             // midnight_gaming: games often/always AND sleeps very late
             if ((p.gaming_behavior == "often" || p.gaming_behavior == "always") &&
@@ -339,16 +363,27 @@ namespace dorm_alloc
                 tags.push_back("over_demand");
             }
 
-            // boundary_violation: high social + low noise tolerance (contradictory profile)
-            // This is a proxy; no direct question about boundaries.
+            // boundary_violation: high social + low noise tolerance
             if (p.social_preference >= 4 && p.noise_tolerance <= 2)
             {
                 tags.push_back("boundary_violation");
             }
 
-            // pets: questionnaire doesn't collect this, cannot derive.
+            // pets: from q11_petPreference (have/want)
+            if (has_raw)
+            {
+                std::string pet = th.value("q11_petPreference", "");
+                if (pet == "have" || pet == "want")
+                    tags.push_back("pets");
+            }
 
-            // opposite_sex: not derivable from questionnaire.
+            // opposite_sex: from q12_oppositeSex (often/sometimes)
+            if (has_raw)
+            {
+                std::string opp = th.value("q12_oppositeSex", "");
+                if (opp == "often" || opp == "sometimes")
+                    tags.push_back("opposite_sex");
+            }
 
             return tags;
         }
@@ -429,18 +464,19 @@ namespace dorm_alloc
                 if (dorm_idx >= dorms.size())
                     break;
 
-                // Find the best pair of unassigned students
+                // Find the best pair of unassigned students matching dorm gender
                 int best_i = -1, best_j = -1;
                 double best_score = -2.0;
 
                 for (size_t i = 0; i < n; ++i)
                 {
-                    if (assigned[i])
-                        continue;
+                    if (assigned[i]) continue;
+                    // Gender filter: if dorm has gender requirement, skip non-matching
+                    if (!dorm.gender.empty() && students[i].gender != dorm.gender) continue;
                     for (size_t j = i + 1; j < n; ++j)
                     {
-                        if (assigned[j])
-                            continue;
+                        if (assigned[j]) continue;
+                        if (!dorm.gender.empty() && students[j].gender != dorm.gender) continue;
                         auto it = pair_scores.find({(int)i, (int)j});
                         if (it != pair_scores.end() && it->second > best_score)
                         {
@@ -468,8 +504,8 @@ namespace dorm_alloc
 
                     for (size_t k = 0; k < n; ++k)
                     {
-                        if (assigned[k])
-                            continue;
+                        if (assigned[k]) continue;
+                        if (!dorm.gender.empty() && students[k].gender != dorm.gender) continue;
 
                         // Calculate average score with current group
                         double avg_score = 0.0;

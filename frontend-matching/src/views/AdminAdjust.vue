@@ -1,5 +1,5 @@
-<![CDATA[<!-- AdminAdjust.vue -->
-<!-- 
+<!-- AdminAdjust.vue -->
+<!--
   管理员控制台 - 人工微调
   - 按宿舍分组展示分配结果
   - 选择两个学生交换宿舍
@@ -266,4 +266,3 @@ onMounted(() => {
 /* Row click cursor */
 :deep(.el-table__row) { cursor: pointer; }
 </style>
-]]>

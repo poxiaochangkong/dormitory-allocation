@@ -1,8 +1,10 @@
-﻿NOTE:
+﻿# NOTE:
 # The previous rule `*` would ignore EVERYTHING, including any new source code.
 # We keep design docs tracked, but allow normal development files/folders.
 *
-#keep backend
+# Claude Code settings (local only, do not commit)
+.claude/
+# Keep backend
 !backend/
 !backend/**
 # Allow frontend-matching
@@ -47,6 +49,24 @@ frontend-matching/*.ntvs*
 frontend-matching/*.njsproj
 frontend-matching/*.sln
 frontend-matching/*.sw?
+
+# Keep scripts
+!scripts/
+!scripts/**
+
+# Allow new frontend subdirectories
+!frontend-matching/src/components/
+!frontend-matching/src/components/**
+!frontend-matching/src/composables/
+!frontend-matching/src/composables/**
+!frontend-matching/src/layouts/
+!frontend-matching/src/layouts/**
+
+# Ignore Windows Zone.Identifier ADS files
+**/*:Zone.Identifier
+
+# Docker-built binaries (not portable)
+backend/build-linux/
 
 # Keep documentation files
 !bug_report.md

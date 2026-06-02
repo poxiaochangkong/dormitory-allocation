@@ -80,6 +80,10 @@ namespace dorm_alloc
 
             // List all users.
             static std::string ListUsers(MySqlClient &db);
+
+            // Get algorithm audit log for a task.
+            static std::string GetTaskAudit(MySqlClient &db,
+                                           const std::string &task_id);
         };
 
     } // namespace service

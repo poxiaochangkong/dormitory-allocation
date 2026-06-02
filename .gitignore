@@ -2,6 +2,9 @@
 # The previous rule `*` would ignore EVERYTHING, including any new source code.
 # We keep design docs tracked, but allow normal development files/folders.
 *
+# Allow git config files at root
+!.gitattributes
+!.gitignore
 # Claude Code settings (local only, do not commit)
 .claude/
 # Keep backend
@@ -62,8 +65,8 @@ frontend-matching/*.sw?
 !frontend-matching/src/layouts/
 !frontend-matching/src/layouts/**
 
-# Ignore Windows Zone.Identifier ADS files
-**/*:Zone.Identifier
+# Ignore Windows Zone.Identifier ADS files (including mangled Unicode versions)
+*Zone.Identifier*
 
 # Docker-built binaries (not portable)
 backend/build-linux/

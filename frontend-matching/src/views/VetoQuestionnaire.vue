@@ -11,7 +11,7 @@
 
       <el-alert
         title="⚠️ 重要说明"
-        description="开启下方任意一项，意味着：如果潜在室友有此行为，系统将 <b>绝对不会</b> 将你们分配在同一宿舍。请谨慎选择。"
+        description="开启下方任意一项，意味着：如果潜在室友有此行为，系统将绝对不会将你们分配在同一宿舍。请谨慎选择。"
         type="error" show-icon :closable="false" class="mb-20"
       />
 

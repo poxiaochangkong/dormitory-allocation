@@ -169,6 +169,18 @@ namespace dorm_alloc
                     "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
                     ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;");
 
+                // 10. algorithm_audit table (execution trace for visualization)
+                client.Execute(
+                    "CREATE TABLE IF NOT EXISTS `algorithm_audit` ("
+                    "  audit_id VARCHAR(64) PRIMARY KEY,"
+                    "  task_id VARCHAR(64) NOT NULL,"
+                    "  step VARCHAR(32) NOT NULL,"
+                    "  step_order INT NOT NULL,"
+                    "  data_json TEXT NOT NULL,"
+                    "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                    "  FOREIGN KEY (task_id) REFERENCES allocation_task(task_id)"
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;");
+
                 // Create indexes (MySQL does not support IF NOT EXISTS for CREATE INDEX,
                 // so we silently ignore errors since indexes may already exist)
                 const char *indexes[] = {

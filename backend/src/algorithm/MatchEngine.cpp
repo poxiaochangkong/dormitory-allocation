@@ -20,6 +20,18 @@ namespace dorm_alloc
     namespace algorithm
     {
 
+        // SQL string escape helper
+        static std::string Esc(const std::string &s)
+        {
+            std::string r;
+            for (char c : s)
+            {
+                if (c == '\'') r += "''";
+                else r += c;
+            }
+            return r;
+        }
+
         std::string MatchEngine::GenerateId()
         {
             // Simple ID: timestamp + random number
@@ -37,8 +49,19 @@ namespace dorm_alloc
             MySqlClient &db,
             const std::string &college,
             const std::string &major,
-            const std::string &gender)
+            const std::string &gender,
+            const std::string &rule_config)
         {
+            // Parse fallback weights from rule_config JSON
+            double fallback_sim = 0.5, fallback_comp = 0.2, fallback_veto = 0.3;
+            if (!rule_config.empty()) {
+                try {
+                    auto rc = nlohmann::json::parse(rule_config);
+                    fallback_sim = rc.value("similarityWeight", 0.5);
+                    fallback_comp = rc.value("complementarityWeight", 0.2);
+                    fallback_veto = rc.value("vetoSafetyWeight", 0.3);
+                } catch (...) {}
+            }
             std::string sql =
                 "SELECT u.user_id, u.gender, u.college, u.major, u.dorm_type, "
                 "  q.sleep_schedule, q.hygiene_level, q.noise_tolerance, "
@@ -78,16 +101,16 @@ namespace dorm_alloc
                 p.mbti_type = rs->getString("mbti_type").asStdString();
                 p.raw_answers = rs->getString("raw_answers").asStdString();
 
-                // Preference weights may be NULL (LEFT JOIN)
+                // Preference weights may be NULL (LEFT JOIN) — use rule_config fallback
                 p.similarity_weight = rs->getDouble("similarity_weight");
                 if (rs->wasNull())
-                    p.similarity_weight = 0.5;
+                    p.similarity_weight = fallback_sim;
                 p.complementarity_weight = rs->getDouble("complementarity_weight");
                 if (rs->wasNull())
-                    p.complementarity_weight = 0.2;
+                    p.complementarity_weight = fallback_comp;
                 p.veto_safety_weight = rs->getDouble("veto_safety_weight");
                 if (rs->wasNull())
-                    p.veto_safety_weight = 0.3;
+                    p.veto_safety_weight = fallback_veto;
 
                 profiles.push_back(std::move(p));
             }
@@ -664,10 +687,10 @@ namespace dorm_alloc
             const std::string &college,
             const std::string &major,
             const std::string &gender,
-            const std::string & /*rule_config*/)
+            const std::string &rule_config)
         {
             // Load data
-            auto students = LoadStudentProfiles(db, college, major, gender);
+            auto students = LoadStudentProfiles(db, college, major, gender, rule_config);
             auto dorms = LoadDormitories(db, gender);
 
             LOG_INFO("MatchEngine::ExecuteAllocation: {} students, {} dorms, college={}, major={}, gender={}",
@@ -680,6 +703,37 @@ namespace dorm_alloc
             if (dorms.empty())
             {
                 throw std::runtime_error("No available dormitories found.");
+            }
+
+            // ===== Audit Step 1: Data stats =====
+            {
+                nlohmann::json stats;
+                stats["studentCount"] = (int)students.size();
+                stats["dormCount"] = (int)dorms.size();
+                int male = 0, female = 0;
+                std::map<std::string, int> mbti_dist, veto_dist;
+                double sum_hygiene = 0;
+                for (const auto &s : students)
+                {
+                    if (s.gender == "male") male++; else female++;
+                    if (!s.mbti_type.empty()) mbti_dist[s.mbti_type]++;
+                    sum_hygiene += s.hygiene_level;
+                    for (const auto &v : s.veto_items) veto_dist[v]++;
+                }
+                stats["genderDistribution"] = {{"male", male}, {"female", female}};
+                stats["avgHygiene"] = (students.empty() ? 0 : sum_hygiene / students.size());
+                nlohmann::json mbti_j, veto_j;
+                for (const auto &kv : mbti_dist) mbti_j[kv.first] = kv.second;
+                for (const auto &kv : veto_dist) veto_j[kv.first] = kv.second;
+                stats["mbtiDistribution"] = mbti_j;
+                stats["vetoTotal"] = 0;
+                for (const auto &s : students) stats["vetoTotal"] = stats["vetoTotal"].get<int>() + (int)s.veto_items.size();
+                stats["vetoItemDistribution"] = veto_j;
+
+                std::ostringstream asql;
+                asql << "INSERT INTO algorithm_audit (audit_id, task_id, step, step_order, data_json) VALUES ('"
+                    << GenerateId() << "','" << task_id << "','stats',1,'" << Esc(stats.dump()) << "');";
+                db.Execute(asql.str());
             }
 
             // Run greedy assignment
@@ -719,6 +773,99 @@ namespace dorm_alloc
             }
 
             LOG_INFO("MatchEngine::ExecuteAllocation: saving {} results to database", results.size());
+
+            // ===== Audit Step 2: Veto conflict summary =====
+            {
+                // Count veto conflicts: compute all behavior tags per student, cross-check veto items
+                nlohmann::json veto_audit;
+                std::map<std::string, int> conflict_count;
+                int total_conflicts = 0;
+                size_t n = students.size();
+                for (size_t i = 0; i < n; ++i) {
+                    auto tags_a = DeriveBehaviorTags(students[i]);
+                    for (size_t j = i + 1; j < n; ++j) {
+                        auto tags_b = DeriveBehaviorTags(students[j]);
+                        bool conflict = false;
+                        for (const auto &v : students[i].veto_items)
+                            for (const auto &t : tags_b)
+                                if (v == t) { conflict = true; conflict_count[v]++; }
+                        for (const auto &v : students[j].veto_items)
+                            for (const auto &t : tags_a)
+                                if (v == t) { conflict = true; conflict_count[v]++; }
+                        if (conflict) total_conflicts++;
+                    }
+                }
+                veto_audit["totalPairs"] = (int)(n * (n-1) / 2);
+                veto_audit["vetoConflicts"] = total_conflicts;
+                veto_audit["conflictRate"] = (n < 2 ? 0.0 : (double)total_conflicts / (n * (n-1) / 2));
+                nlohmann::json top_v;
+                std::vector<std::pair<int, std::string>> sorted_v;
+                for (const auto &kv : conflict_count) sorted_v.push_back({kv.second, kv.first});
+                std::sort(sorted_v.rbegin(), sorted_v.rend());
+                for (const auto &p : sorted_v)
+                    top_v.push_back({{"item", p.second}, {"conflicts", p.first}});
+                veto_audit["topConflictItems"] = top_v;
+
+                std::ostringstream asql;
+                asql << "INSERT INTO algorithm_audit (audit_id, task_id, step, step_order, data_json) VALUES ('"
+                    << GenerateId() << "','" << task_id << "','veto_matrix',2,'" << Esc(veto_audit.dump()) << "');";
+                db.Execute(asql.str());
+            }
+
+            // ===== Audit Step 3: Group formation summary =====
+            {
+                nlohmann::json groups_audit;
+                std::map<std::string, std::vector<double>> dorm_scores_map;
+                for (const auto &r : results) {
+                    dorm_scores_map[r.dorm_id].push_back(r.total_score);
+                }
+                nlohmann::json gs = nlohmann::json::array();
+                double sum_all = 0;
+                int count_all = 0;
+                for (const auto &d : dorms) {
+                    auto it = dorm_scores_map.find(d.dorm_id);
+                    if (it != dorm_scores_map.end() && !it->second.empty()) {
+                        double avg = 0;
+                        for (double s : it->second) avg += s;
+                        avg /= it->second.size();
+                        gs.push_back({
+                            {"dorm", d.building + "-" + d.room_number},
+                            {"students", (int)it->second.size()},
+                            {"avgScore", avg}
+                        });
+                        sum_all += avg * it->second.size();
+                        count_all += (int)it->second.size();
+                    }
+                }
+                groups_audit["groupsFormed"] = (int)gs.size();
+                groups_audit["overflowStudents"] = 0;
+                for (const auto &r : results) if (r.total_score == 0.0) groups_audit["overflowStudents"] = groups_audit["overflowStudents"].get<int>() + 1;
+                groups_audit["avgGroupScore"] = (count_all > 0 ? sum_all / count_all : 0.0);
+                groups_audit["groupScores"] = gs;
+
+                std::ostringstream asql;
+                asql << "INSERT INTO algorithm_audit (audit_id, task_id, step, step_order, data_json) VALUES ('"
+                    << GenerateId() << "','" << task_id << "','groups',3,'" << Esc(groups_audit.dump()) << "');";
+                db.Execute(asql.str());
+            }
+
+            // ===== Audit Step 4: Final summary =====
+            {
+                nlohmann::json final_audit;
+                final_audit["totalAllocated"] = (int)results.size();
+                double ts = 0, ss = 0, cs = 0, vs = 0;
+                for (const auto &r : results) { ts += r.total_score; ss += r.similarity_score; cs += r.complementarity_score; vs += r.veto_risk_score; }
+                int sz = std::max(1, (int)results.size());
+                final_audit["avgTotalScore"] = ts / sz;
+                final_audit["avgSimilarityScore"] = ss / sz;
+                final_audit["avgComplementarityScore"] = cs / sz;
+                final_audit["avgVetoRiskScore"] = vs / sz;
+
+                std::ostringstream asql;
+                asql << "INSERT INTO algorithm_audit (audit_id, task_id, step, step_order, data_json) VALUES ('"
+                    << GenerateId() << "','" << task_id << "','final',4,'" << Esc(final_audit.dump()) << "');";
+                db.Execute(asql.str());
+            }
 
             // Update task status
             db.Execute(

@@ -87,7 +87,8 @@ namespace dorm_alloc
                 MySqlClient &db,
                 const std::string &college,
                 const std::string &major,
-                const std::string &gender);
+                const std::string &gender,
+                const std::string &rule_config = "");
 
             // Load available dormitories for the given scope.
             static std::vector<DormInfo> LoadDormitories(

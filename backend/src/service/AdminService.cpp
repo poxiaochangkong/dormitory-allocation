@@ -281,6 +281,39 @@ namespace dorm_alloc
             return result.dump();
         }
 
+        // ---- GetTaskAudit ----
+        std::string AdminService::GetTaskAudit(MySqlClient &db,
+                                                const std::string &task_id)
+        {
+            auto rs = db.ExecuteQuery(
+                "SELECT step, step_order, data_json "
+                "FROM algorithm_audit "
+                "WHERE task_id = '" + Escape(task_id) + "' "
+                "ORDER BY step_order ASC;");
+
+            nlohmann::json steps = nlohmann::json::array();
+            while (rs->next())
+            {
+                nlohmann::json s;
+                s["step"] = rs->getString("step").asStdString();
+                s["stepOrder"] = rs->getInt("step_order");
+                // Parse the JSON snapshot
+                try
+                {
+                    s["data"] = nlohmann::json::parse(rs->getString("data_json").asStdString());
+                }
+                catch (...)
+                {
+                    s["data"] = nlohmann::json::object();
+                }
+                steps.push_back(s);
+            }
+
+            nlohmann::json result;
+            result["steps"] = steps;
+            return result.dump();
+        }
+
         std::string AdminService::SaveAllocationRule(
             MySqlClient &db,
             const std::string &rule_json)
@@ -316,15 +349,27 @@ namespace dorm_alloc
             std::string major = data.value("major", "");
             std::string gender = data.value("gender", "");
 
+            // Read global allocation rule from system_config as default
+            std::string rule_config_str = "";
+            try {
+                auto rule_rs = db.ExecuteQuery(
+                    "SELECT config_value FROM system_config WHERE config_key = 'allocation_rule';");
+                if (rule_rs->next()) {
+                    rule_config_str = rule_rs->getString("config_value").asStdString();
+                }
+            } catch (...) { rule_config_str = ""; }
+
             std::ostringstream sql;
             sql << "INSERT INTO allocation_task "
-                << "(task_id, task_name, college, major, gender, status) VALUES ("
+                << "(task_id, task_name, college, major, gender, status, rule_config) VALUES ("
                 << "'" << task_id << "', "
                 << "'" << Escape(task_name) << "', "
                 << "'" << Escape(college) << "', "
                 << "'" << Escape(major) << "', "
                 << "'" << Escape(gender) << "', "
-                << "'pending');";
+                << "'pending', "
+                << (rule_config_str.empty() ? "NULL" : "'" + Escape(rule_config_str) + "'")
+                << ");";
             db.Execute(sql.str());
 
             nlohmann::json result;

@@ -193,3 +193,11 @@ export function transferAdmin(targetUserId) {
     data: { targetUserId }
   })
 }
+
+// Get algorithm audit log for a task
+export function getTaskAudit(taskId) {
+  return request({
+    url: `/admin/allocation/task/audit/${taskId}`,
+    method: 'get'
+  })
+}

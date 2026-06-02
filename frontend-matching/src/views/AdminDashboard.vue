@@ -71,6 +71,10 @@
               :disabled="scope.row.status !== 'completed'">
               导出CSV
             </el-button>
+            <el-button size="small" type="primary" @click="handleOpenAudit(scope.row)"
+              :disabled="scope.row.status !== 'completed'">
+              算法详情
+            </el-button>
             <el-button size="small" type="danger" plain @click="handleDeleteTask(scope.row)">
               删除
             </el-button>
@@ -176,22 +180,91 @@
         <el-table-column prop="building" label="楼栋" width="100" />
         <el-table-column prop="roomNumber" label="房间号" width="100" />
         <el-table-column prop="totalScore" label="匹配分" width="100">
-          <template #default="scope">
-            {{ (scope.row.totalScore * 100).toFixed(1) }}
-          </template>
+          <template #default="scope">{{ (scope.row.totalScore * 100).toFixed(1) }}</template>
         </el-table-column>
         <el-table-column prop="explanationText" label="匹配说明" show-overflow-tooltip />
       </el-table>
+    </el-dialog>
+
+    <!-- 算法执行详情 -->
+    <el-dialog v-model="showAuditDialog" :title="'算法执行详情 — ' + auditTaskName" width="950px" top="2vh">
+      <div v-if="auditLoading" style="text-align:center;padding:40px"><el-icon class="is-loading" :size="30"><Loading /></el-icon><p>加载审计数据...</p></div>
+      <template v-else-if="auditSteps.length">
+        <el-tabs v-model="auditActiveTab" type="border-card">
+          <el-tab-pane label="📊 数据概览" name="stats">
+            <el-row :gutter="20" v-if="auditSteps[0]">
+              <el-col :span="8"><el-statistic title="学生总数" :value="auditSteps[0].data.studentCount" /></el-col>
+              <el-col :span="8"><el-statistic title="可用宿舍" :value="auditSteps[0].data.dormCount" /></el-col>
+              <el-col :span="8"><el-statistic title="平均卫生分" :value="auditSteps[0].data.avgHygiene?.toFixed(1)" /></el-col>
+            </el-row>
+            <el-row :gutter="20" style="margin-top:20px" v-if="auditSteps[0]">
+              <el-col :span="8"><el-statistic title="男 / 女" :value="`${auditSteps[0].data.genderDistribution?.male ?? '-'} / ${auditSteps[0].data.genderDistribution?.female ?? '-'}`" /></el-col>
+              <el-col :span="8"><el-statistic title="否决项总数" :value="auditSteps[0].data.vetoTotal" /></el-col>
+              <el-col :span="8"><el-statistic title="MBTI 类型数" :value="Object.keys(auditSteps[0].data.mbtiDistribution||{}).length" /></el-col>
+            </el-row>
+            <div style="height:280px;margin-top:20px" v-if="auditSteps[0]">
+              <h4>MBTI 类型分布</h4>
+              <v-chart :option="mbtiBarOption" autoresize style="height:250px" />
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane label="🚫 否决冲突" name="veto">
+            <el-row :gutter="20" v-if="auditSteps[1]">
+              <el-col :span="8"><el-statistic title="总学生对数" :value="auditSteps[1].data.totalPairs" /></el-col>
+              <el-col :span="8"><el-statistic title="否决冲突数" :value="auditSteps[1].data.vetoConflicts" /></el-col>
+              <el-col :span="8"><el-statistic title="冲突率" :value="(auditSteps[1].data.conflictRate * 100).toFixed(2) + '%'" /></el-col>
+            </el-row>
+            <el-table :data="auditSteps[1]?.data.topConflictItems || []" style="margin-top:20px">
+              <el-table-column prop="item" label="否决项" width="200" />
+              <el-table-column prop="conflicts" label="冲突次数" />
+              <el-table-column label="冲突率" width="120">
+                <template #default="s"> {{ (s.row.conflicts / (auditSteps[1]?.data.totalPairs || 1) * 100).toFixed(2) }}% </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+
+          <el-tab-pane label="📋 分组过程" name="groups">
+            <el-row :gutter="20" v-if="auditSteps[2]">
+              <el-col :span="8"><el-statistic title="形成组数" :value="auditSteps[2].data.groupsFormed" /></el-col>
+              <el-col :span="8"><el-statistic title="溢出学生" :value="auditSteps[2].data.overflowStudents" /></el-col>
+              <el-col :span="8"><el-statistic title="平均组得分" :value="(auditSteps[2].data.avgGroupScore * 100).toFixed(1) + '%'" /></el-col>
+            </el-row>
+            <div style="height:400px;margin-top:10px" v-if="auditSteps[2]">
+              <v-chart :option="groupScoreOption" autoresize style="height:390px" />
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane label="✅ 最终结果" name="final">
+            <el-row :gutter="20" v-if="auditSteps[3]">
+              <el-col :span="6"><el-statistic title="分配人数" :value="auditSteps[3].data.totalAllocated" /></el-col>
+              <el-col :span="6"><el-statistic title="平均总分" :value="(auditSteps[3].data.avgTotalScore * 100).toFixed(1) + '%'" /></el-col>
+              <el-col :span="6"><el-statistic title="平均相似度" :value="(auditSteps[3].data.avgSimilarityScore * 100).toFixed(1) + '%'" /></el-col>
+              <el-col :span="6"><el-statistic title="平均互补度" :value="(auditSteps[3].data.avgComplementarityScore * 100).toFixed(1) + '%'" /></el-col>
+            </el-row>
+            <div style="height:300px;margin-top:20px" v-if="auditSteps[3]">
+              <v-chart :option="finalScoreOption" autoresize style="height:280px" />
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </template>
+      <el-empty v-else description="该任务无审计数据" />
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
-import { listTasks, createTask, runTask, getTaskResult, listUsers, listDormitories, exportTaskResult, deleteTask, importStudents, deleteUser, transferAdmin } from '../api'
+import { listTasks, createTask, runTask, getTaskResult, listUsers, listDormitories, exportTaskResult, deleteTask, importStudents, deleteUser, transferAdmin, getTaskAudit } from '../api'
+import { use } from 'echarts/core'
+import { BarChart, PieChart } from 'echarts/charts'
+import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import VChart from 'vue-echarts'
+
+use([BarChart, PieChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, CanvasRenderer])
 
 const router = useRouter()
 const loadingTasks = ref(false)
@@ -202,6 +275,85 @@ const showImportDialog = ref(false)
 const resultTaskName = ref('')
 const tasks = ref([])
 const taskResults = ref([])
+
+// Audit visualization state
+const showAuditDialog = ref(false)
+const auditTaskName = ref('')
+const auditSteps = ref([])
+const auditLoading = ref(false)
+const auditActiveTab = ref('stats')
+
+// MBTI bar chart
+const mbtiBarOption = ref({})
+// Group score bar chart
+const groupScoreOption = ref({})
+// Final score gauge
+const finalScoreOption = ref({})
+
+const handleOpenAudit = async (task) => {
+  auditTaskName.value = task.taskName || task.taskId
+  showAuditDialog.value = true
+  auditSteps.value = []
+  auditLoading.value = true
+  auditActiveTab.value = 'stats'
+  try {
+    const data = await getTaskAudit(task.taskId)
+    const steps = data?.steps || []
+    auditSteps.value = steps
+
+    // Build MBTI bar chart
+    const s0 = steps.find(s => s.step === 'stats')
+    if (s0) {
+      const mbti = s0.data.mbtiDistribution || {}
+      mbtiBarOption.value = {
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: Object.keys(mbti), axisLabel: { rotate: 45 } },
+        yAxis: { type: 'value' },
+        series: [{ type: 'bar', data: Object.values(mbti), itemStyle: { color: '#409EFF' } }],
+        grid: { bottom: 80 }
+      }
+    }
+
+    // Build group score chart
+    const s2 = steps.find(s => s.step === 'groups')
+    if (s2) {
+      const gs = (s2.data.groupScores || []).sort((a, b) => b.avgScore - a.avgScore)
+      groupScoreOption.value = {
+        tooltip: { trigger: 'axis', formatter: p => `${p[0].name}<br/>平均分: ${(p[0].value*100).toFixed(1)}%` },
+        xAxis: { type: 'value', max: 1, axisLabel: { formatter: v => (v*100).toFixed(0)+'%' } },
+        yAxis: { type: 'category', data: gs.map(g => g.dorm), inverse: true, axisLabel: { fontSize: 10 } },
+        series: [{
+          type: 'bar', data: gs.map(g => g.avgScore),
+          itemStyle: { color: p => ['#67C23A','#85ce61','#b3e19d','#E6A23C','#F56C6C'][Math.min(4, Math.floor((p.dataIndex / gs.length) * 5))] }
+        }],
+        grid: { left: 140, right: 20 }
+      }
+    }
+
+    // Build final score comparison
+    const s3 = steps.find(s => s.step === 'final')
+    if (s3) {
+      finalScoreOption.value = {
+        tooltip: {},
+        radar: {
+          indicator: [
+            { name: '综合分', max: 1 }, { name: '相似度', max: 1 },
+            { name: '互补度', max: 1 }, { name: '否决安全', max: 1 }
+          ],
+          radius: '60%'
+        },
+        series: [{
+          type: 'radar',
+          data: [{
+            value: [s3.data.avgTotalScore, s3.data.avgSimilarityScore, s3.data.avgComplementarityScore, s3.data.avgVetoRiskScore],
+            name: '算法平均值', areaStyle: { color: 'rgba(64,158,255,0.3)' }
+          }]
+        }]
+      }
+    }
+  } catch (e) { console.error(e) }
+  finally { auditLoading.value = false }
+}
 const userList = ref([])
 const importJson = ref('')
 const importing = ref(false)

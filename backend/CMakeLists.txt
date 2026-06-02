@@ -26,15 +26,48 @@ if(MSVC)
 endif()
 
 # ----------------------------
-# Dependencies (provided by vcpkg manifest mode)
+# Dependencies
 # ----------------------------
-# These find_package calls rely on vcpkg toolchain integration.
-find_package(httplib CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
-find_package(spdlog CONFIG REQUIRED)
-find_package(CLI11 CONFIG REQUIRED)
-find_package(unofficial-mysql-connector-cpp CONFIG REQUIRED)
-find_package(unofficial-libmysql CONFIG REQUIRED)
+option(USE_SYSTEM_PACKAGES "Use system packages (apt) instead of vcpkg" OFF)
+
+if(USE_SYSTEM_PACKAGES)
+  # System packages: find using standard CMake mechanisms
+  find_package(httplib REQUIRED)
+  find_package(nlohmann_json REQUIRED)
+  find_package(spdlog REQUIRED)
+  find_package(CLI11 CONFIG REQUIRED)
+
+  # MySQL Connector C++ from system (e.g. apt install libmysqlcppconn-dev)
+  find_path(MYSQL_JDBC_INCLUDE_DIR mysql/jdbc.h
+    PATHS /usr/include
+    PATH_SUFFIXES mysql-cppconn-8 mysql
+    REQUIRED)
+  find_library(MYSQLCPPCONN_LIB mysqlcppconn REQUIRED)
+  find_library(MYSQLCLIENT_LIB mysqlclient REQUIRED)
+
+  if(NOT TARGET mysqlcppconn::mysqlcppconn)
+    add_library(mysqlcppconn::mysqlcppconn UNKNOWN IMPORTED)
+    set_target_properties(mysqlcppconn::mysqlcppconn PROPERTIES
+      IMPORTED_LOCATION "${MYSQLCPPCONN_LIB}"
+      INTERFACE_INCLUDE_DIRECTORIES "${MYSQL_JDBC_INCLUDE_DIR}"
+    )
+  endif()
+
+  if(NOT TARGET mysqlclient::mysqlclient)
+    add_library(mysqlclient::mysqlclient UNKNOWN IMPORTED)
+    set_target_properties(mysqlclient::mysqlclient PROPERTIES
+      IMPORTED_LOCATION "${MYSQLCLIENT_LIB}"
+    )
+  endif()
+else()
+  # vcpkg manifest mode
+  find_package(httplib CONFIG REQUIRED)
+  find_package(nlohmann_json CONFIG REQUIRED)
+  find_package(spdlog CONFIG REQUIRED)
+  find_package(CLI11 CONFIG REQUIRED)
+  find_package(unofficial-mysql-connector-cpp CONFIG REQUIRED)
+  find_package(unofficial-libmysql CONFIG REQUIRED)
+endif()
 
 # ----------------------------
 # Core library: domain/application/algorithm/infrastructure
@@ -52,10 +85,17 @@ target_link_libraries(dorm_alloc_core
     spdlog::spdlog
 )
 
+# Link MySQL connector.
 # Use Classic API (JDBC) target if available.
 # This keeps DB access on standard MySQL protocol/port (default 3306),
 # instead of X DevAPI/X Protocol (typically 33060).
-if(TARGET unofficial::mysql-connector-cpp::connector-jdbc)
+if(USE_SYSTEM_PACKAGES)
+  target_link_libraries(dorm_alloc_core
+    PUBLIC
+      mysqlcppconn::mysqlcppconn
+      mysqlclient::mysqlclient
+  )
+elseif(TARGET unofficial::mysql-connector-cpp::connector-jdbc)
   target_link_libraries(dorm_alloc_core
     PUBLIC
       unofficial::mysql-connector-cpp::connector-jdbc

@@ -479,6 +479,29 @@ namespace dorm_alloc
                 "UPDATE match_result SET dorm_id = '" + dorm_id1 +
                 "' WHERE result_id = '" + result_id2 + "';");
 
+            // Recalculate roommate_ids for both dorms
+            auto recalc = [&](const std::string &did)
+            {
+                auto rm_rs = db.ExecuteQuery(
+                    "SELECT user_id FROM match_result "
+                    "WHERE task_id = '" + task_id + "' AND dorm_id = '" + did + "';");
+                std::vector<std::string> uids;
+                while (rm_rs->next())
+                    uids.push_back(rm_rs->getString("user_id").asStdString());
+                for (const auto &uid : uids)
+                {
+                    std::string others;
+                    for (const auto &o : uids)
+                        if (o != uid)
+                            others += (others.empty() ? "" : ",") + o;
+                    db.Execute(
+                        "UPDATE match_result SET roommate_ids = '" + Escape(others) +
+                        "' WHERE task_id = '" + task_id + "' AND user_id = '" + uid + "';");
+                }
+            };
+            recalc(dorm_id1);
+            recalc(dorm_id2);
+
             nlohmann::json result;
             result["swapped"] = true;
             result["userId1"] = user_id1;
@@ -491,7 +514,7 @@ namespace dorm_alloc
             const std::string &task_id)
         {
             auto rs = db.ExecuteQuery(
-                "SELECT mr.user_id, mr.dorm_id, mr.total_score, "
+                "SELECT mr.user_id, mr.dorm_id, mr.total_score, mr.roommate_ids, "
                 "  d.building, d.room_number, "
                 "  u.student_no, u.gender, u.college, u.major "
                 "FROM match_result mr "
@@ -501,17 +524,34 @@ namespace dorm_alloc
                 task_id + "' ORDER BY d.building, d.room_number, u.student_no;");
 
             std::ostringstream csv;
-            csv << "student_no,gender,college,major,building,room_number,total_score\n";
+            csv << "student_no,gender,college,major,building,room_number,total_score,roommate_student_nos\n";
 
             while (rs->next())
             {
+                // Resolve roommate user_ids to student_nos
+                std::string rm_str = rs->getString("roommate_ids").asStdString();
+                std::string rm_nos;
+                if (!rm_str.empty())
+                {
+                    std::istringstream rms(rm_str);
+                    std::string uid;
+                    while (std::getline(rms, uid, ','))
+                    {
+                        auto u_rs = db.ExecuteQuery(
+                            "SELECT student_no FROM `user` WHERE user_id = '" + Escape(uid) + "';");
+                        if (u_rs->next())
+                            rm_nos += (rm_nos.empty() ? "" : ";") +
+                                      u_rs->getString("student_no").asStdString();
+                    }
+                }
                 csv << rs->getString("student_no").asStdString() << ","
                     << rs->getString("gender").asStdString() << ","
                     << rs->getString("college").asStdString() << ","
                     << rs->getString("major").asStdString() << ","
                     << rs->getString("building").asStdString() << ","
                     << rs->getString("room_number").asStdString() << ","
-                    << rs->getDouble("total_score") << "\n";
+                    << rs->getDouble("total_score") << ","
+                    << "\"" << rm_nos << "\"" << "\n";
             }
 
             return csv.str();

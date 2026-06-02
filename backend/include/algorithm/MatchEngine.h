@@ -40,6 +40,8 @@ namespace dorm_alloc
             double similarity_weight = 0.5;
             double complementarity_weight = 0.2;
             double veto_safety_weight = 0.3;
+            // Raw questionnaire answers (JSON) for veto derivation
+            std::string raw_answers;
             // Veto items
             std::vector<std::string> veto_items;
         };

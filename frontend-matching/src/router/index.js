@@ -1,55 +1,58 @@
-//创建路由实例并传递 `routes` 配置
+// 路由配置：嵌套路由 + 侧边栏布局
 import { createRouter, createWebHistory } from 'vue-router'
+import MainLayout from '../layouts/MainLayout.vue'
 
 const routes = [
   { path: '/', redirect: '/login' },
   { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { guest: true } },
 
-  // ====== 管理员端路由 ======
-  { path: '/admin/dashboard', name: 'AdminDashboard', component: () => import('../views/AdminDashboard.vue'), meta: { requiresAuth: true, role: 'admin' } },
-  { path: '/admin/adjust', name: 'AdminAdjust', component: () => import('../views/AdminAdjust.vue'), meta: { requiresAuth: true, role: 'admin' } },
+  // ====== 学生端 (嵌套路由) ======
+  {
+    path: '/student',
+    component: MainLayout,
+    meta: { requiresAuth: true },
+    children: [
+      { path: '', redirect: '/student/home' },
+      { path: 'home', name: 'StudentHome', component: () => import('../views/StudentHome.vue') },
+      { path: 'traditional', name: 'Traditional', component: () => import('../views/TraditionalQuestionnaire.vue') },
+      { path: 'veto', name: 'VetoQuestionnaire', component: () => import('../views/VetoQuestionnaire.vue') },
+      { path: 'personality', name: 'Personality', component: () => import('../views/PersonalityQuestionnaire.vue') },
+      { path: 'immersive', name: 'ImmersiveScene', component: () => import('../views/ImmersiveScene.vue') },
+      { path: 'weights', name: 'WeightMixer', component: () => import('../views/WeightMixer.vue') },
+      { path: 'result', name: 'StudentResult', component: () => import('../views/StudentResult.vue') },
+    ]
+  },
 
-  // ====== 学生端业务流 ======
-  { path: '/student/home', name: 'StudentHome', component: () => import('../views/StudentHome.vue'), meta: { requiresAuth: true } },
-  { path: '/student/questionnaire', name: 'Questionnaire', component: () => import('../views/Questionnaire.vue'), meta: { requiresAuth: true } },
-  { path: '/student/scene', name: 'ImmersiveScene', component: () => import('../views/ImmersiveScene.vue'), meta: { requiresAuth: true } },
-  { path: '/student/result', name: 'StudentResult', component: () => import('../views/StudentResult.vue'), meta: { requiresAuth: true } }
+  // ====== 管理员端 (嵌套路由) ======
+  {
+    path: '/admin',
+    component: MainLayout,
+    meta: { requiresAuth: true, role: 'admin' },
+    children: [
+      { path: '', redirect: '/admin/dashboard' },
+      { path: 'dashboard', name: 'AdminDashboard', component: () => import('../views/AdminDashboard.vue') },
+      { path: 'adjust', name: 'AdminAdjust', component: () => import('../views/AdminAdjust.vue') },
+      { path: 'rules', name: 'RuleConfig', component: () => import('../views/RuleConfig.vue') },
+    ]
+  },
 ]
 
-const router = createRouter({
-  history: createWebHistory(),
-  routes
-})
+const router = createRouter({ history: createWebHistory(), routes })
 
-// Navigation guard: check authentication
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   const role = localStorage.getItem('role')
 
-  // Public routes (login page)
   if (to.meta.guest) {
-    // Already logged in? Redirect to appropriate home
     if (token) {
-      if (role === 'admin') {
-        return next('/admin/dashboard')
-      }
-      return next('/student/questionnaire')
+      return next(role === 'admin' ? '/admin/dashboard' : '/student/home')
     }
     return next()
   }
 
-  // Protected routes require token
-  if (to.meta.requiresAuth && !token) {
-    return next('/login')
-  }
-
-  // Admin-only routes
-  if (to.meta.role === 'admin' && role !== 'admin') {
-    return next('/login')
-  }
-
+  if (to.meta.requiresAuth && !token) return next('/login')
+  if (to.meta.role === 'admin' && role !== 'admin') return next('/login')
   next()
 })
 
-// 导出路由实例以供 Vue 应用使用
 export default router

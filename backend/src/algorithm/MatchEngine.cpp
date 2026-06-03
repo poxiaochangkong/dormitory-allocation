@@ -975,7 +975,8 @@ namespace dorm_alloc
                     }
                 }
 
-                // Fallback: if no dorm has enough space, use last dorm
+                // Fallback: if no dorm has enough space for the full room,
+                // find a partially-filled dorm with same gender that can take some students
                 if (best_dorm < 0)
                 {
                     for (size_t d = 0; d < dorms.size(); ++d)
@@ -999,17 +1000,22 @@ namespace dorm_alloc
                     dorm_room = dorms[best_dorm].room_number;
                     dorm_remaining[best_dorm] -= (int)room.size();
                 }
-                else if (!dorms.empty())
+                else
                 {
-                    dorm_id = dorms.back().dorm_id;
-                    dorm_building = dorms.back().building;
-                    dorm_room = dorms.back().room_number;
+                    // No dorm available — log warning, skip these students from results
+                    LOG_WARN("No dorm available for room with {} students (dorms full or gender mismatch), skipping from match_result", room.size());
+                    for (int s : room)
+                    {
+                        AllocationResult r;
+                        r.result_id = GenerateId();
+                        r.user_id = students[s].user_id;
+                        r.dorm_id = "";
+                        r.total_score = 0;
+                        r.explanation_text = "Unassigned: no available dormitory.";
+                        results.push_back(std::move(r));
+                    }
+                    continue; // Skip DB insert for this room
                 }
-
-                // Collect member IDs
-                std::vector<std::string> member_ids;
-                for (int s : room)
-                    member_ids.push_back(students[s].user_id);
 
                 // Generate results for each student in the room
                 for (int s : room)
@@ -1058,9 +1064,16 @@ namespace dorm_alloc
 
             LOG_INFO("MatchEngine::ExecuteAllocation: {} results generated", results.size());
 
-            // Save results to database
+            // Save results to database (skip unassigned students — dorm_id is NOT NULL)
+            int saved_count = 0;
             for (const auto &r : results)
             {
+                if (r.dorm_id.empty())
+                {
+                    LOG_WARN("Skipping DB insert for unassigned student: {}", r.user_id);
+                    continue;
+                }
+
                 std::string roommate_str;
                 for (size_t i = 0; i < r.roommate_ids.size(); ++i)
                 {
@@ -1084,12 +1097,14 @@ namespace dorm_alloc
                     << r.similarity_score << ", "
                     << r.complementarity_score << ", "
                     << r.veto_risk_score << ", "
-                    << "'" << r.explanation_text << "');";
+                    << "'" << Esc(r.explanation_text) << "');";
 
                 db.Execute(sql.str());
+                saved_count++;
             }
 
-            LOG_INFO("MatchEngine::ExecuteAllocation: saved {} results to database", results.size());
+            LOG_INFO("MatchEngine::ExecuteAllocation: saved {}/{} results to database ({} unassigned)",
+                     saved_count, results.size(), (int)results.size() - saved_count);
 
             // ===== Audit Step 2: Veto conflict summary =====
             {

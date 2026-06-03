@@ -404,11 +404,8 @@ namespace dorm_alloc
             {
                 throw std::runtime_error("Task is already running.");
             }
-            if (status == "completed")
-            {
-                // Delete old results for re-run
-                db.Execute("DELETE FROM match_result WHERE task_id = '" + task_id + "';");
-            }
+            // Always delete old results before re-running (handles any status)
+            db.Execute("DELETE FROM match_result WHERE task_id = '" + task_id + "';");
 
             std::string college = rs->getString("college").asStdString();
             std::string major = rs->getString("major").asStdString();

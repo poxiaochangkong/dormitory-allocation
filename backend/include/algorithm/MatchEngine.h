@@ -2,14 +2,20 @@
 
 // Matching engine for dormitory allocation.
 //
-// This module handles:
-// - Veto filtering (behavior-based conflict detection)
-// - Similarity scoring (normalized Euclidean distance)
-// - Complementarity scoring (MBTI + social preference)
-// - Greedy dormitory assignment
+// Three-phase algorithm (v2.0):
+//   Phase 1: Pair Formation  — greedy approximate max-weight matching
+//   Phase 2: Pair Merging    — merge pairs into 4-person rooms
+//   Phase 3: SA Refinement   — simulated annealing global optimization
+//
+// Scoring:
+//   - Gaussian-kernel similarity (6 dimensions)
+//   - MBTI cognitive-function-stack complementarity
+//   - Symmetrized preference weights
 
 #include <string>
 #include <vector>
+#include <map>
+#include <utility>
 
 #include "infrastructure/db/MySqlClient.h"
 
@@ -82,7 +88,7 @@ namespace dorm_alloc
                 const std::string &rule_config);
 
         private:
-            // Load student profiles with questionnaire data for the given scope.
+            // --- Data loading ---
             static std::vector<StudentProfile> LoadStudentProfiles(
                 MySqlClient &db,
                 const std::string &college,
@@ -90,49 +96,74 @@ namespace dorm_alloc
                 const std::string &gender,
                 const std::string &rule_config = "");
 
-            // Load available dormitories for the given scope.
             static std::vector<DormInfo> LoadDormitories(
                 MySqlClient &db,
                 const std::string &gender);
 
-            // Map sleep schedule string to numeric value for distance calculation.
+            // --- Scoring functions ---
             static double MapSleepToNumeric(const std::string &schedule);
-
-            // Map gaming behavior string to numeric value.
             static double MapGamingToNumeric(const std::string &behavior);
 
-            // Calculate similarity score using normalized Euclidean distance.
+            // Gaussian-kernel similarity across 6 normalized dimensions.
             static double CalculateSimilarity(
                 const StudentProfile &a,
                 const StudentProfile &b);
 
-            // Calculate MBTI complementarity dimension score.
-            static double MbtiDimensionScore(char a, char b);
+            // MBTI cognitive-function-stack complementarity.
+            // Returns the top-4 cognitive functions for a given MBTI type.
+            static std::vector<std::string> GetCognitiveFunctions(const std::string &mbti_type);
 
-            // Calculate complementarity score based on MBTI and social preference.
+            // Scores complementarity between two individual cognitive functions.
+            static double FunctionComplementarity(const std::string &func_a, const std::string &func_b);
+
+            // Overall complementarity score based on cognitive function stacks.
             static double CalculateComplementarity(
                 const StudentProfile &a,
                 const StudentProfile &b);
 
-            // Derive behavior tags from a student's questionnaire data.
+            // Behavior tag derivation and veto conflict detection.
             static std::vector<std::string> DeriveBehaviorTags(const StudentProfile &p);
-
-            // Check veto conflicts: A's veto items vs B's actual behaviors.
             static bool HasVetoConflict(
                 const StudentProfile &a,
                 const StudentProfile &b);
 
-            // Calculate overall pair score.
+            // Overall pair score with symmetrized weights.
             static double CalculatePairScore(
                 const StudentProfile &a,
                 const StudentProfile &b);
 
-            // Greedy assignment algorithm.
-            static std::vector<AllocationResult> GreedyAssign(
-                const std::vector<StudentProfile> &students,
-                const std::vector<DormInfo> &dorms);
+            // --- Three-phase allocation ---
 
-            // Generate a UUID-like string for IDs.
+            // Phase 1: Greedy approximate max-weight matching → pairs + unpaired.
+            static std::vector<std::pair<int, int>> FormPairs(
+                const std::vector<int> &indices,
+                const std::map<std::pair<int, int>, double> &pair_scores);
+
+            // Phase 2: Merge pairs into rooms of capacity, handle leftovers.
+            static std::vector<std::vector<int>> MergePairsIntoRooms(
+                const std::vector<std::pair<int, int>> &pairs,
+                const std::vector<int> &unpaired,
+                const std::vector<StudentProfile> &students,
+                const std::map<std::pair<int, int>, double> &pair_scores,
+                int room_capacity);
+
+            // Phase 3: Simulated annealing refinement.
+            static std::vector<std::vector<int>> RefineBySA(
+                std::vector<std::vector<int>> rooms,
+                const std::vector<StudentProfile> &students,
+                const std::map<std::pair<int, int>, double> &pair_scores,
+                int room_capacity);
+
+            // --- Room / global scoring ---
+            static double ComputeRoomScore(
+                const std::vector<int> &room,
+                const std::map<std::pair<int, int>, double> &pair_scores);
+
+            static double ComputeGlobalScore(
+                const std::vector<std::vector<int>> &rooms,
+                const std::map<std::pair<int, int>, double> &pair_scores);
+
+            // --- Utility ---
             static std::string GenerateId();
         };
 

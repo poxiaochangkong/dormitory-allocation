@@ -83,56 +83,74 @@
       </el-table>
     </el-card>
 
-    <!-- Import students & User management row -->
-    <el-row :gutter="20" class="mt-20">
-      <!-- Import students card -->
-      <el-col :span="12">
-        <el-card>
-          <template #header>
-            <div class="card-header">
-              <span>📥 批量导入学生</span>
-              <el-button type="primary" size="small" @click="showImportDialog = true">导入学生</el-button>
-            </div>
-          </template>
-          <el-empty v-if="!importResult" description="点击上方按钮导入学生数据" :image-size="60" />
-          <el-result v-else :icon="importResult.success ? 'success' : 'error'" :title="importResult.message" />
-        </el-card>
-      </el-col>
+    <!-- Import students card (full width) -->
+    <el-card class="mt-20">
+      <template #header>
+        <div class="card-header">
+          <span>📥 批量导入学生</span>
+          <el-button type="primary" size="small" @click="showImportDialog = true">导入学生</el-button>
+        </div>
+      </template>
+      <el-empty v-if="!importResult" description="点击上方按钮导入学生数据" :image-size="60" />
+      <el-result v-else :icon="importResult.success ? 'success' : 'error'" :title="importResult.message" />
+    </el-card>
 
-      <!-- User management card -->
-      <el-col :span="12">
-        <el-card>
-          <template #header>
-            <div class="card-header">
-              <span>👥 用户管理 ({{ userList.length }})</span>
-              <el-button type="primary" size="small" @click="loadUserList">刷新</el-button>
-            </div>
-          </template>
-          <el-table :data="userList.slice(0, 10)" style="width: 100%" size="small" max-height="250">
-            <el-table-column prop="studentNo" label="学号" width="120" />
-            <el-table-column prop="college" label="学院" width="120" show-overflow-tooltip />
-            <el-table-column prop="role" label="角色" width="80">
-              <template #default="scope">
-                <el-tag :type="scope.row.role === 'admin' ? 'danger' : 'info'" size="small">
-                  {{ scope.row.role === 'admin' ? '管理员' : '学生' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="150">
-              <template #default="scope">
-                <el-button v-if="scope.row.role !== 'admin'" size="small" type="danger" text
-                  @click="handleDeleteUser(scope.row)">删除</el-button>
-                <el-button v-if="scope.row.role !== 'admin'" size="small" type="warning" text
-                  @click="handleTransferAdmin(scope.row)">设为管理员</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div v-if="userList.length > 10" style="text-align: center; padding: 8px; color: #909399; font-size: 12px;">
-            仅显示前 10 条，共 {{ userList.length }} 条记录
+    <!-- User management card (full width) -->
+    <el-card class="mt-20">
+      <template #header>
+        <div class="card-header">
+          <span>👥 用户管理 (共 {{ filteredUserList.length }} 条{{ userSearchKeyword ? '，已筛选' : '' }})</span>
+          <div class="card-header-actions">
+            <el-input v-model="userSearchKeyword" placeholder="搜索学号/学院/专业" clearable
+              style="width: 220px; margin-right: 10px;" size="small" prefix-icon="Search" />
+            <el-select v-model="userRoleFilter" placeholder="角色筛选" clearable size="small"
+              style="width: 120px; margin-right: 10px;">
+              <el-option label="全部" value="" />
+              <el-option label="学生" value="student" />
+              <el-option label="管理员" value="admin" />
+            </el-select>
+            <el-button type="primary" size="small" @click="loadUserList">刷新</el-button>
           </div>
-        </el-card>
-      </el-col>
-    </el-row>
+        </div>
+      </template>
+      <el-table :data="paginatedUserList" style="width: 100%" size="small">
+        <el-table-column prop="studentNo" label="学号" width="130" />
+        <el-table-column prop="gender" label="性别" width="70">
+          <template #default="scope">
+            {{ scope.row.gender === 'male' ? '男' : scope.row.gender === 'female' ? '女' : scope.row.gender || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="college" label="学院" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="major" label="专业" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="grade" label="年级" width="80" />
+        <el-table-column prop="role" label="角色" width="80">
+          <template #default="scope">
+            <el-tag :type="scope.row.role === 'admin' ? 'danger' : 'info'" size="small">
+              {{ scope.row.role === 'admin' ? '管理员' : '学生' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="scope">
+            <el-button v-if="scope.row.role !== 'admin'" size="small" type="danger" text
+              @click="handleDeleteUser(scope.row)">删除</el-button>
+            <el-button v-if="scope.row.role !== 'admin'" size="small" type="warning" text
+              @click="handleTransferAdmin(scope.row)">设为管理员</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="userCurrentPage"
+          v-model:page-size="userPageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="filteredUserList.length"
+          layout="total, sizes, prev, pager, next, jumper"
+          background
+          small
+        />
+      </div>
+    </el-card>
 
     <!-- Import students dialog -->
     <el-dialog v-model="showImportDialog" title="批量导入学生" width="600px">
@@ -355,6 +373,34 @@ const handleOpenAudit = async (task) => {
   finally { auditLoading.value = false }
 }
 const userList = ref([])
+const userSearchKeyword = ref('')
+const userRoleFilter = ref('')
+const userCurrentPage = ref(1)
+const userPageSize = ref(20)
+
+// Filtered user list based on search keyword and role filter
+const filteredUserList = computed(() => {
+  let list = userList.value
+  if (userRoleFilter.value) {
+    list = list.filter(u => u.role === userRoleFilter.value)
+  }
+  if (userSearchKeyword.value) {
+    const kw = userSearchKeyword.value.toLowerCase()
+    list = list.filter(u =>
+      (u.studentNo || '').toLowerCase().includes(kw) ||
+      (u.college || '').toLowerCase().includes(kw) ||
+      (u.major || '').toLowerCase().includes(kw)
+    )
+  }
+  return list
+})
+
+// Paginated slice for current page
+const paginatedUserList = computed(() => {
+  const start = (userCurrentPage.value - 1) * userPageSize.value
+  return filteredUserList.value.slice(start, start + userPageSize.value)
+})
+
 const importJson = ref('')
 const importing = ref(false)
 const importResult = ref(null)
@@ -619,5 +665,7 @@ onMounted(() => {
 .header-box { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;}
 .header-box h2 { margin: 0; color: #303133; }
 .mt-20 { margin-top: 20px; }
-.card-header { display: flex; justify-content: space-between; align-items: center; }
+.card-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.card-header-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.pagination-bar { display: flex; justify-content: flex-end; margin-top: 12px; }
 </style>

@@ -1,9 +1,10 @@
 # Bug Report
 
-> 更新时间：2026-06-02 晚（前端体验修复轮）
+> 更新时间：2026-06-03（第二轮代码审查）
 > 范围：前后端对接问题、静态代码分析发现的 bug、项目功能可行性评估
 > 说明：仅列出未修复的 bug，基于对全部源代码的静态分析
 > 本次修复：B4, B5, B6, C8, M8, M9, M10, L5, L6, L8, L9 — 11 个 bug 已修复
+> 第二轮新增：C10, S1, S2, M13, M14 — 5 个 bug（含脚本完全不可用问题）
 
 ---
 
@@ -183,6 +184,25 @@ sql << "INSERT INTO questionnaire "
 **影响**: 🔴 极其严重 — 学生重新提交问卷后，匹配算法会将同一人分配到多个宿舍，严重破坏分配结果的正确性。
 
 **修复建议**: 改为 `INSERT ... ON DUPLICATE KEY UPDATE` 或先 `DELETE` 再 `INSERT`（基于 `user_id` 唯一约束）。
+
+---
+
+### C10. `DeleteTask` 未删除 `algorithm_audit` 记录导致外键约束失败（第二轮新增）
+
+**文件**: `AdminService.cpp` — `DeleteTask()`
+
+**描述**: `DeleteTask` 先删除 `match_result`，再删除 `allocation_task`。但 `algorithm_audit` 表有 `FOREIGN KEY (task_id) REFERENCES allocation_task(task_id)` 约束，而 `DeleteTask` 没有先删除 `algorithm_audit` 中对应的记录。
+
+```cpp
+// 当前代码：缺少 algorithm_audit 的删除
+db.Execute("DELETE FROM match_result WHERE task_id = '...';");
+db.Execute("DELETE FROM allocation_task WHERE task_id = '...';");
+// 缺失：DELETE FROM algorithm_audit WHERE task_id = '...';
+```
+
+**影响**: 🔴 任何有审计记录的任务都无法被删除，抛出 SQL 外键约束异常。`match_result` 已被删除，产生孤儿数据。
+
+**修复建议**: 在删除 `allocation_task` 之前添加 `DELETE FROM algorithm_audit WHERE task_id = ?`。
 
 ---
 
@@ -462,6 +482,73 @@ result["token"] = token;
 ```
 
 **影响**: 前端若统一解析登录响应中的 college/major 等字段，admin 登录会拿到 undefined。
+
+---
+
+### M13. `WeightMixer.vue` 权重归一化 `toFixed` 精度累积（第二轮新增）
+
+**文件**: `frontend-matching/src/views/WeightMixer.vue` — `onSliderChange()`
+
+**描述**: 权重归一化使用 `toFixed(2)` 做四舍五入，多次快速拖动滑块后累积误差会导致三权重之和偏离 1.0。例如 `sim=0.55, comp=0.20, veto=0.25` 经过多轮调整后可能变为 `sim=0.54, comp=0.21, veto=0.24`（总和 0.99）。同时，`Math.abs(total - 1.0) < 0.001` 的早退逻辑在精度损失累积时可能跳过归一化。
+
+```js
+const onSliderChange = (moved) => {
+  const total = weights.sim + weights.comp + weights.veto
+  if (Math.abs(total - 1.0) < 0.001) return  // 早退可能导致精度漂移
+  // ...
+  weights.comp = +(weights.comp * ratio).toFixed(2)  // 累积精度损失
+}
+```
+
+**影响**: 快速操作滑块后权重之和可能不等于 1.0，提交的偏好权重数据与用户预期不一致，可能轻微影响匹配结果。
+
+**修复建议**: 使用更高精度（`toFixed(4)`）或在最后一项直接赋值 `1.0 - 其他两项`（当前已部分采用，但 `toFixed` 仍引入误差）。
+
+---
+
+## 🐍 脚本缺陷
+
+### S1. `batch_questionnaire.py` 使用硬编码假 Token 导致全部提交失败（第二轮新增）
+
+**文件**: `scripts/batch_questionnaire.py`（第89行）
+
+**描述**: 脚本中问卷提交请求使用硬编码的 `"Authorization": "Bearer tk_test"`，而非使用每个学生的真实 token。后端 `AuthenticateRequest` 会在数据库中查找该 token，找不到则返回 401。
+
+```python
+r = requests.post(
+    f"{BASE}/api/student/questionnaire/submit",
+    headers={"Content-Type": "application/json",
+             "Authorization": f"Bearer tk_test"},  # ← 硬编码假 token
+    json=payload, timeout=10
+)
+```
+
+**影响**: 🔴 **脚本 100% 的问卷提交都以 401 Unauthorized 失败**，批量生成功能完全不可用。脚本只增加 `fail` 计数器但不报告根本原因。
+
+**修复建议**: 脚本已获取 admin token，应改为：先用每个学生的学号登录获取其 token，或利用 admin 权限直接写入数据库。
+
+---
+
+### S2. `batch_questionnaire.py` 缺少 `userId` 字段（第二轮新增）
+
+**文件**: `scripts/batch_questionnaire.py`（第68行起的 payload 构造）
+
+**描述**: 后端 `POST /api/student/questionnaire/submit` 要求 body 中包含 `userId` 字段，并验证 `auth.userId == body.userId`。但脚本构造的 payload 中没有顶层 `userId` 字段。
+
+```python
+payload = {
+    "basicInfo": { ... },
+    "questionnaire": { ... },
+    "preference": { ... },
+    "vetoItems": [...],
+    "openText": { ... }
+    # 缺失: "userId": uid
+}
+```
+
+**影响**: 🔴 即使 Token 问题（S1）修复后，提交仍会因 `Missing userId`（400）或 `userId mismatch`（403）而失败。脚本完全无法正常工作。
+
+**修复建议**: 在 payload 中添加 `"userId": uid`。
 
 ---
 

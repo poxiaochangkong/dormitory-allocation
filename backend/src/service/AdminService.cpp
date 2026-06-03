@@ -283,13 +283,14 @@ namespace dorm_alloc
 
         // ---- GetTaskAudit ----
         std::string AdminService::GetTaskAudit(MySqlClient &db,
-                                                const std::string &task_id)
+                                               const std::string &task_id)
         {
             auto rs = db.ExecuteQuery(
                 "SELECT step, step_order, data_json "
                 "FROM algorithm_audit "
-                "WHERE task_id = '" + Escape(task_id) + "' "
-                "ORDER BY step_order ASC;");
+                "WHERE task_id = '" +
+                Escape(task_id) + "' "
+                                  "ORDER BY step_order ASC;");
 
             nlohmann::json steps = nlohmann::json::array();
             while (rs->next())
@@ -351,13 +352,19 @@ namespace dorm_alloc
 
             // Read global allocation rule from system_config as default
             std::string rule_config_str = "";
-            try {
+            try
+            {
                 auto rule_rs = db.ExecuteQuery(
                     "SELECT config_value FROM system_config WHERE config_key = 'allocation_rule';");
-                if (rule_rs->next()) {
+                if (rule_rs->next())
+                {
                     rule_config_str = rule_rs->getString("config_value").asStdString();
                 }
-            } catch (...) { rule_config_str = ""; }
+            }
+            catch (...)
+            {
+                rule_config_str = "";
+            }
 
             std::ostringstream sql;
             sql << "INSERT INTO allocation_task "
@@ -418,9 +425,23 @@ namespace dorm_alloc
                 "WHERE task_id = '" +
                 task_id + "';");
 
-            // Run the allocation algorithm
-            auto results = dorm_alloc::algorithm::MatchEngine::ExecuteAllocation(
-                db, task_id, college, major, gender, rule_config);
+            // Run the allocation algorithm (B8 fix: catch exceptions, set status='failed')
+            std::vector<dorm_alloc::algorithm::AllocationResult> results;
+            try
+            {
+                results = dorm_alloc::algorithm::MatchEngine::ExecuteAllocation(
+                    db, task_id, college, major, gender, rule_config);
+            }
+            catch (const std::exception &e)
+            {
+                // Mark task as failed so it can be re-run
+                db.Execute(
+                    "UPDATE allocation_task SET status = 'failed' "
+                    "WHERE task_id = '" +
+                    task_id + "';");
+                LOG_ERROR("RunTask failed: taskId={}, error={}", task_id, e.what());
+                throw; // re-throw to let caller return error to client
+            }
 
             nlohmann::json result;
             result["taskId"] = task_id;
@@ -529,7 +550,8 @@ namespace dorm_alloc
             {
                 auto rm_rs = db.ExecuteQuery(
                     "SELECT user_id FROM match_result "
-                    "WHERE task_id = '" + task_id + "' AND dorm_id = '" + did + "';");
+                    "WHERE task_id = '" +
+                    task_id + "' AND dorm_id = '" + did + "';");
                 std::vector<std::string> uids;
                 while (rm_rs->next())
                     uids.push_back(rm_rs->getString("user_id").asStdString());
@@ -546,6 +568,45 @@ namespace dorm_alloc
             };
             recalc(dorm_id1);
             recalc(dorm_id2);
+
+            // M11 fix: update explanation_text after swap to reflect new dorm
+            auto update_explanation = [&](const std::string &uid, const std::string &did)
+            {
+                // Get dorm info
+                auto d_rs = db.ExecuteQuery(
+                    "SELECT building, room_number FROM dormitory WHERE dorm_id = '" + Escape(did) + "';");
+                std::string building, room_number;
+                if (d_rs->next())
+                {
+                    building = d_rs->getString("building").asStdString();
+                    room_number = d_rs->getString("room_number").asStdString();
+                }
+                // Get roommate count
+                auto mr_rs = db.ExecuteQuery(
+                    "SELECT roommate_ids FROM match_result "
+                    "WHERE task_id = '" +
+                    task_id + "' AND user_id = '" + Escape(uid) + "';");
+                if (mr_rs->next())
+                {
+                    std::string rm_ids = mr_rs->getString("roommate_ids").asStdString();
+                    int rm_count = 0;
+                    if (!rm_ids.empty())
+                    {
+                        rm_count = 1;
+                        for (char c : rm_ids)
+                            if (c == ',')
+                                rm_count++;
+                    }
+                    std::ostringstream expl;
+                    expl << "Assigned to " << building << " " << room_number
+                         << " with " << rm_count << " roommate(s). (Adjusted by admin)";
+                    db.Execute(
+                        "UPDATE match_result SET explanation_text = '" + Escape(expl.str()) +
+                        "' WHERE task_id = '" + task_id + "' AND user_id = '" + Escape(uid) + "';");
+                }
+            };
+            update_explanation(user_id1, dorm_id2);
+            update_explanation(user_id2, dorm_id1);
 
             nlohmann::json result;
             result["swapped"] = true;
@@ -691,9 +752,9 @@ namespace dorm_alloc
             MySqlClient &db,
             const std::string &task_id)
         {
-            // Verify task exists
+            // Verify task exists and check status
             auto rs = db.ExecuteQuery(
-                "SELECT task_id FROM allocation_task WHERE task_id = '" +
+                "SELECT task_id, status FROM allocation_task WHERE task_id = '" +
                 Escape(task_id) + "';");
 
             if (!rs->next())
@@ -701,6 +762,15 @@ namespace dorm_alloc
                 throw std::runtime_error("Task not found: " + task_id);
             }
 
+            // B12 fix: prevent deleting a running task
+            std::string status = rs->getString("status").asStdString();
+            if (status == "running")
+            {
+                throw std::runtime_error("Cannot delete a running task. Wait for it to finish or fail.");
+            }
+
+            // C10 fix: delete algorithm_audit before match_result (foreign key constraint)
+            db.Execute("DELETE FROM algorithm_audit WHERE task_id = '" + Escape(task_id) + "';");
             // Delete related match results first (foreign key constraints)
             db.Execute("DELETE FROM match_result WHERE task_id = '" + Escape(task_id) + "';");
             // Delete the task itself

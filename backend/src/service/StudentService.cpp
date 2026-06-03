@@ -209,24 +209,6 @@ namespace dorm_alloc
         }
 
         // ---- SubmitQuestionnaire ----
-        // Accepts both frontend format and original backend format.
-        //
-        // Frontend format:
-        // {
-        //   "basicInfo": { "gender":"male", "college":"...", "major":"..." },
-        //   "traditionalHabits": { "q02_sleepTime":"A", "q03_wakeTime":"B", ... },
-        //   "vetoSettings": { "v11_smokeAlcohol":true, "v12_midnightGaming":true, ... },
-        //   "personality": { "p21_mbti":"INTJ", "p22_socialEnergy":"A", ... }
-        // }
-        //
-        // Backend format (also accepted):
-        // {
-        //   "basicInfo": { ... },
-        //   "questionnaire": { "sleepSchedule":"early", "hygieneLevel":3, ... },
-        //   "preference": { "similarityWeight":0.5, ... },
-        //   "vetoItems": ["smoke", "midnight_gaming"],
-        //   "openText": { "selfDescription":"...", "roommateExpectation":"..." }
-        // }
         std::string StudentService::SubmitQuestionnaire(
             MySqlClient &db,
             const std::string &user_id,
@@ -273,27 +255,24 @@ namespace dorm_alloc
 
             if (is_frontend_format)
             {
-                // Map frontend traditionalHabits to backend fields
                 if (data.contains("traditionalHabits"))
                 {
                     auto &th = data["traditionalHabits"];
                     sleep_schedule = MapSleepSchedule(th.value("q02_sleepTime", ""));
-                    // q03_wakeTime: store in raw_answers but no direct backend field
                     hygiene_level = MapToLevel(th.value("q06_hygiene", "B"));
-                    // q07_laundry, q08_studyPlace: store in raw_answers
-
-                    // NEW: Extract previously-missing algorithm dimensions
                     noise_tolerance = th.value("q04_noiseTolerance", 3);
                     temperature_preference = th.value("q05_tempPref", 24);
-                    // q09_gamingHabit: A=never, B=sometimes, C=often, D=always
                     std::string gaming_code = th.value("q09_gamingHabit", "B");
-                    if (gaming_code == "A") gaming_behavior = "never";
-                    else if (gaming_code == "C") gaming_behavior = "often";
-                    else if (gaming_code == "D") gaming_behavior = "always";
-                    else gaming_behavior = "sometimes";
+                    if (gaming_code == "A")
+                        gaming_behavior = "never";
+                    else if (gaming_code == "C")
+                        gaming_behavior = "often";
+                    else if (gaming_code == "D")
+                        gaming_behavior = "always";
+                    else
+                        gaming_behavior = "sometimes";
                 }
 
-                // Map frontend personality to backend fields
                 if (data.contains("personality"))
                 {
                     auto &p = data["personality"];
@@ -301,12 +280,10 @@ namespace dorm_alloc
                     social_preference = MapSocialPreference(p.value("p22_socialEnergy", "B"));
                 }
 
-                // Store the entire original data as raw_answers
                 raw_answers = data;
             }
             else
             {
-                // Direct backend format
                 if (data.contains("questionnaire"))
                 {
                     auto &q = data["questionnaire"];
@@ -320,6 +297,9 @@ namespace dorm_alloc
                     raw_answers = q;
                 }
             }
+
+            // Delete existing questionnaire to prevent duplicate rows (C9 fix)
+            db.Execute("DELETE FROM questionnaire WHERE user_id = '" + Escape(user_id) + "';");
 
             // Save questionnaire record
             std::string qid = GenId("q_");
@@ -354,7 +334,6 @@ namespace dorm_alloc
                 }
                 else if (is_frontend_format)
                 {
-                    // Use default weights when frontend doesn't provide them
                     sim_w = 0.5;
                     comp_w = 0.25;
                     veto_w = 0.25;
@@ -383,9 +362,7 @@ namespace dorm_alloc
 
                 if (is_frontend_format && data.contains("vetoSettings"))
                 {
-                    // Convert frontend boolean switches to string array
                     auto &vs = data["vetoSettings"];
-                    // Map each boolean switch to a veto item string
                     if (vs.value("v11_smokeAlcohol", false))
                         veto_list.push_back("smoke_alcohol");
                     if (vs.value("v12_midnightGaming", false))
@@ -411,7 +388,6 @@ namespace dorm_alloc
                     }
                 }
 
-                // Delete existing veto items and insert new ones
                 db.Execute("DELETE FROM veto WHERE user_id = '" + Escape(user_id) + "';");
                 for (const auto &item : veto_list)
                 {
@@ -450,9 +426,6 @@ namespace dorm_alloc
         }
 
         // ---- SubmitSceneData ----
-        // Accepts immersive scene data from the frontend's ImmersiveScene.vue
-        // Stores the data in the questionnaire's raw_answers field (appended)
-        // or in open_text_profile if descriptive.
         std::string StudentService::SubmitSceneData(
             MySqlClient &db,
             const std::string &user_id,
@@ -461,9 +434,6 @@ namespace dorm_alloc
             LOG_INFO("StudentService::SubmitSceneData: userId={}", user_id);
             auto data = nlohmann::json::parse(data_json);
 
-            // Store scene data in open_text_profile or a separate mechanism.
-            // For now, we update the existing questionnaire's raw_answers
-            // and also update the open_text_profile if scene provides text fields.
             std::string self_desc = data.value("selfDescription", "");
             std::string roommate_exp = data.value("roommateExpectation", "");
 
@@ -483,57 +453,59 @@ namespace dorm_alloc
                 db.Execute(sql.str());
             }
 
-            // Also store the full scene data as raw scene data
-            // by updating the questionnaire raw_answers with scene info
+            // Check if questionnaire exists (B11 fix - error instead of silent discard)
             auto rs = db.ExecuteQuery(
                 "SELECT questionnaire_id, raw_answers FROM questionnaire "
                 "WHERE user_id = '" +
                 Escape(user_id) + "' ORDER BY questionnaire_id DESC LIMIT 1;");
 
-            if (rs->next())
+            if (!rs->next())
             {
-                std::string qid = rs->getString("questionnaire_id").asStdString();
-                // Merge scene data into existing raw_answers
-                nlohmann::json existing;
-                try
-                {
-                    existing = nlohmann::json::parse(rs->getString("raw_answers").asStdString());
-                }
-                catch (...)
-                {
-                    existing = nlohmann::json::object();
-                }
-                existing["sceneData"] = data;
+                throw std::runtime_error("Please submit the basic questionnaire before submitting scene data.");
+            }
 
+            std::string qid = rs->getString("questionnaire_id").asStdString();
+            // Merge scene data into existing raw_answers
+            nlohmann::json existing;
+            try
+            {
+                existing = nlohmann::json::parse(rs->getString("raw_answers").asStdString());
+            }
+            catch (...)
+            {
+                existing = nlohmann::json::object();
+            }
+            existing["sceneData"] = data;
+
+            {
                 std::ostringstream sql;
                 sql << "UPDATE questionnaire SET raw_answers = '"
                     << Escape(existing.dump())
                     << "' WHERE questionnaire_id = '" << Escape(qid) << "';";
                 db.Execute(sql.str());
+            }
 
-                // Map immersive scene data back to structured columns
-                // s37_noiseDb (30-100) -> noise_tolerance (1-5)
-                // s30_acTemp (16-30) -> temperature_preference (18-30)
-                if (data.contains("s37_noiseDb") || data.contains("s30_acTemp"))
+            // Map immersive scene data back to structured columns
+            if (data.contains("s37_noiseDb") || data.contains("s30_acTemp"))
+            {
+                std::ostringstream qsql;
+                qsql << "UPDATE questionnaire SET ";
+                bool first = true;
+                if (data.contains("s37_noiseDb"))
                 {
-                    std::ostringstream qsql;
-                    qsql << "UPDATE questionnaire SET ";
-                    bool first = true;
-                    if (data.contains("s37_noiseDb"))
-                    {
-                        int ndb = data["s37_noiseDb"].get<int>();
-                        int nt = std::max(1, std::min(5, (100 - ndb) / 14 + 1)); // 100->1, 30->5
-                        qsql << "noise_tolerance = " << nt;
-                        first = false;
-                    }
-                    if (data.contains("s30_acTemp"))
-                    {
-                        if (!first) qsql << ", ";
-                        qsql << "temperature_preference = " << data["s30_acTemp"].get<int>();
-                    }
-                    qsql << " WHERE questionnaire_id = '" << Escape(qid) << "';";
-                    db.Execute(qsql.str());
+                    int ndb = data["s37_noiseDb"].get<int>();
+                    int nt = std::max(1, std::min(5, (100 - ndb) / 14 + 1));
+                    qsql << "noise_tolerance = " << nt;
+                    first = false;
                 }
+                if (data.contains("s30_acTemp"))
+                {
+                    if (!first)
+                        qsql << ", ";
+                    qsql << "temperature_preference = " << data["s30_acTemp"].get<int>();
+                }
+                qsql << " WHERE questionnaire_id = '" << Escape(qid) << "';";
+                db.Execute(qsql.str());
             }
 
             nlohmann::json result;
@@ -559,7 +531,6 @@ namespace dorm_alloc
 
             if (!rs->next())
             {
-                // No result yet
                 return "{}";
             }
 
@@ -570,7 +541,6 @@ namespace dorm_alloc
             result["building"] = rs->getString("building").asStdString();
             result["roomNumber"] = rs->getString("room_number").asStdString();
 
-            // Parse roommate_ids (comma-separated)
             std::string roommate_str = rs->getString("roommate_ids").asStdString();
             if (!roommate_str.empty())
             {
@@ -584,7 +554,6 @@ namespace dorm_alloc
                 result["roommateIds"] = roommates;
             }
 
-            // Scores - 3 from algorithm + 2 derived
             double sim_score = rs->getDouble("similarity_score");
             double comp_score = rs->getDouble("complementarity_score");
             double veto_score = rs->getDouble("veto_risk_score");
@@ -594,11 +563,9 @@ namespace dorm_alloc
             result["complementarityScore"] = comp_score;
             result["vetoRiskScore"] = veto_score;
 
-            // Radar chart dimensions — real scores from algorithm
             result["hygieneConsistencyScore"] = sim_score;
             result["scheduleOverlapScore"] = comp_score;
 
-            // Calculate global averages for radar baseline comparison
             auto avg_rs = db.ExecuteQuery(
                 "SELECT AVG(similarity_score) as avg_sim, "
                 "AVG(complementarity_score) as avg_comp, "
@@ -622,7 +589,6 @@ namespace dorm_alloc
 
             result["explanationText"] = rs->getString("explanation_text").asStdString();
 
-            // Query roommate details
             if (result.contains("roommateIds") && result["roommateIds"].is_array())
             {
                 nlohmann::json roommate_details = nlohmann::json::array();
@@ -685,7 +651,6 @@ namespace dorm_alloc
                 throw std::runtime_error("Student number and password are required.");
             }
 
-            // Check if student_no already exists
             auto rs = db.ExecuteQuery(
                 "SELECT user_id FROM `user` WHERE student_no = '" +
                 Escape(student_no) + "';");
@@ -694,7 +659,6 @@ namespace dorm_alloc
                 throw std::runtime_error("Student number already registered.");
             }
 
-            // Generate user data
             std::string user_id = GenId("u_");
             std::string gender = data.value("gender", "");
             std::string college = data.value("college", "");
@@ -702,7 +666,6 @@ namespace dorm_alloc
             std::string grade = data.value("grade", "");
             int dorm_type = data.value("dormType", 4);
 
-            // Hash password with random salt
             std::string salt = dorm_alloc::infra::auth::CryptoUtil::GenerateSalt();
             std::string hashed_pw = dorm_alloc::infra::auth::CryptoUtil::HashPassword(password, salt);
 

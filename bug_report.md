@@ -1,10 +1,11 @@
 # Bug Report
 
-> 更新时间：2026-06-03（第二轮代码审查）
+> 更新时间：2026-06-03（第三轮代码审查 — 源码验证）
 > 范围：前后端对接问题、静态代码分析发现的 bug、项目功能可行性评估
 > 说明：仅列出未修复的 bug，基于对全部源代码的静态分析
-> 本次修复：B4, B5, B6, C8, M8, M9, M10, L5, L6, L8, L9 — 11 个 bug 已修复
-> 第二轮新增：C10, S1, S2, M13, M14 — 5 个 bug（含脚本完全不可用问题）
+> 第一轮修复：B4, B5, B6, C8, M8, M9, M10, L5, L6, L8, L9 — 11 个 bug 已修复
+> 第二轮新增：C10, S1, S2, M13 — 4 个 bug（含脚本完全不可用问题）
+> 第三轮验证：C3, B2, M4 — 3 个 bug 经源码核实确认为已修复（更新报告状态）
 
 ---
 
@@ -101,20 +102,22 @@
 
 ---
 
-### C3. `AdjustResult` 只交换 dorm_id，不更新 roommate_ids
+### C3. `AdjustResult` 只交换 dorm_id，不更新 roommate_ids ✅ 已修复 (2026-06-03 源码验证)
 
-**文件**: `AdminService.cpp` — `AdjustResult()` (第474-480行)
+**文件**: `AdminService.cpp` — `AdjustResult()` (第527-548行)
 
-**描述**: 管理员调整分配结果时只更新了 `dorm_id`，未重新计算受影响房间的 `roommate_ids`，导致数据不一致。
+**修复说明**: 代码已实现 `recalc` lambda，交换 dorm_id 后正确重新计算两个宿舍所有学生的 `roommate_ids`。此 bug 已不存在。
 
 ```cpp
-// 当前代码：只交换 dorm_id
-db.Execute("UPDATE match_result SET dorm_id = '" + dorm_id2 + "' WHERE result_id = '" + result_id1 + "';");
-db.Execute("UPDATE match_result SET dorm_id = '" + dorm_id1 + "' WHERE result_id = '" + result_id2 + "';");
-// 缺失：更新两个房间所有学生的 roommate_ids
+auto recalc = [&](const std::string &did) {
+    auto rm_rs = db.ExecuteQuery("SELECT user_id FROM match_result WHERE ...");
+    // 重新计算并 UPDATE roommate_ids
+};
+recalc(dorm_id1);
+recalc(dorm_id2);
 ```
 
-**影响**: 调整后室友列表数据错误，学生查看结果时看到错误的室友信息。
+**关联**: M11（explanation_text 未更新）仍然存在，建议修复。
 
 ---
 
@@ -229,23 +232,16 @@ db.Execute("DELETE FROM allocation_task WHERE task_id = '...';");
 
 ---
 
-### B2. 前端格式问卷缺少多个字段映射
+### B2. 前端格式问卷缺少多个字段映射 ✅ 已修复 (2026-06-03 源码验证)
 
-**文件**: `StudentService.cpp` — `SubmitQuestionnaire()` (第274-296行)
+**文件**: `StudentService.cpp` — `SubmitQuestionnaire()` (第286-293行)
 
-**描述**: 当检测到前端格式（含 `traditionalHabits`、`personality` 等字段）时，以下字段无法正确映射：
+**修复说明**: 代码已补充全部三个缺失字段的映射：
+- `noise_tolerance` ← `q04_noiseTolerance`（第286行）
+- `temperature_preference` ← `q05_tempPref`（第287行）
+- `gaming_behavior` ← `q09_gamingHabit`（A/B/C/D → never/sometimes/often/always，第289-293行）
 
-| 前端字段 | 后端字段 | 状态 |
-|---------|---------|------|
-| `q02_sleepTime` (A/B/C/D) | `sleep_schedule` | ✅ 有映射 |
-| `q06_hygiene` (A/B/C) | `hygiene_level` | ✅ 有映射 |
-| `p22_socialEnergy` (A/B/C) | `social_preference` | ✅ 有映射 |
-| `p21_mbti` | `mbti_type` | ✅ 直接传递 |
-| — | `noise_tolerance` | ❌ 使用默认值3 |
-| — | `temperature_preference` | ❌ 使用默认值24 |
-| — | `gaming_behavior` | ❌ 使用空字符串 |
-
-**影响**: 前端问卷收集的数据不足以填充匹配算法所需的全部维度，导致3个维度使用默认值，降低匹配准确性。
+前端问卷所有维度现已正确映射到后端字段，不再使用默认值。
 
 ---
 
@@ -397,18 +393,18 @@ return result.dump();
 
 ---
 
-### M4. `GetMatchResult` 返回虚假子分数
+### M4. `GetMatchResult` 返回虚假子分数 ✅ 已修复 (2026-06-03 源码验证)
 
-**文件**: `StudentService.cpp` — `GetMatchResult()` (第567-568行)
+**文件**: `StudentService.cpp` — `GetMatchResult()` (第598-599行)
 
-**描述**: 返回的 `hygieneConsistencyScore` 和 `scheduleOverlapScore` 由公式 `sim_score * 0.9 + 0.05`、`sim_score * 0.85 + 0.1` 计算，并非算法的真实度量。
+**修复说明**: 代码已改为直接使用真实的 similarity_score 和 complementarity_score，不再使用虚假公式：
 
 ```cpp
-result["hygieneConsistencyScore"] = sim_score * 0.9 + 0.05;
-result["scheduleOverlapScore"] = sim_score * 0.85 + 0.1;
+result["hygieneConsistencyScore"] = sim_score;   // 直接使用真实 similarity_score
+result["scheduleOverlapScore"] = comp_score;      // 直接使用真实 complementarity_score
 ```
 
-**影响**: 前端雷达图展示误导性数据。
+前端雷达图现在展示真实的匹配子分数。
 
 ---
 
@@ -625,7 +621,7 @@ payload = {
 |---|------|---------|-------------|------|
 | 1 | `POST /api/student/login` | `{ studentNo, password }` | `{ studentNo, password }` | ✅ 匹配 |
 | 2 | `POST /api/student/register` | `{ studentNo, password, gender, college, major, grade }` | 同左 | ✅ 匹配 |
-| 3 | `POST /api/student/questionnaire/submit` | `{ userId, basicInfo, traditionalHabits, vetoSettings, personality }` | 检测 `traditionalHabits` 字段走前端格式映射 | ⚠️ 部分字段缺失映射 |
+| 3 | `POST /api/student/questionnaire/submit` | `{ userId, basicInfo, traditionalHabits, vetoSettings, personality }` | 检测 `traditionalHabits` 字段走前端格式映射 | ✅ 映射已补全(B2已修复) |
 | 4 | `POST /api/student/scene/submit` | `{ userId, s30_acTemp, s31_bedAction, ... }` | 存入 raw_answers，不参与匹配 | ⚠️ 数据浪费 |
 | 5 | `GET /api/student/match-result/:userId` | Bearer token + path param | Token 认证 + 查询 | ✅ 匹配 |
 | 6 | `POST /api/admin/login` | `{ studentNo, password }` | `{ studentNo, password }` + role='admin' | ✅ 匹配 |
@@ -633,7 +629,7 @@ payload = {
 | 8 | `POST /api/admin/allocation/task/create` | `{ taskName, college, major, gender }` | 同左 | ✅ 匹配 |
 | 9 | `POST /api/admin/allocation/task/run/:taskId` | path param | 同步执行匹配算法 | ⚠️ 同步阻塞 |
 | 10 | `GET /api/admin/allocation/task/result/:taskId` | path param | 返回 allocations 数组 | ✅ 匹配 |
-| 11 | `POST /api/admin/allocation/task/adjust` | `{ taskId, userId1, userId2 }` | 交换 dorm_id | ⚠️ 不更新 roommate_ids |
+| 11 | `POST /api/admin/allocation/task/adjust` | `{ taskId, userId1, userId2 }` | 交换 dorm_id + 重算 roommate_ids | ✅ 匹配(C3已修复) |
 | 12 | `GET /api/admin/allocation/task/export/:taskId` | path param | 返回 CSV text | ✅ 匹配 |
 | 13 | `DELETE /api/admin/allocation/task/:taskId` | path param | 删除任务及结果 | ✅ 匹配 |
 | 14 | `GET /api/admin/tasks` | 无 | 无认证 | ⚠️ 无认证 |
@@ -658,13 +654,13 @@ payload = {
 3. **C6**: `MatchEngine::LoadStudentProfiles` 中查询参数应转义
 4. **C7**: `MatchEngine::ExecuteAllocation` 中 explanation_text 应使用 `Escape()`
 5. **C2 + M1**: 使用 CSPRNG 生成 Token（`std::random_device` + `std::mt19937`）
-6. **C3 + M11**: `AdjustResult` 添加 roommate_ids 重算逻辑，同时更新 explanation_text
+6. **M11**: `AdjustResult` 交换后更新 explanation_text（C3 roommate_ids 重算已修复）
 7. **C4**: `ImportStudents` 区分新增和更新的计数
 
 ### 🟠 功能完善（影响核心功能）— 6 项
 
 8. **B1**: 将沉浸式场景数据整合到匹配算法中
-9. **B2**: 补充前端问卷字段映射（noise_tolerance, temperature_preference, gaming_behavior）
+9. ~~**B2**: 补充前端问卷字段映射~~ ✅ 已修复
 10. **B8**: `RunTask` 添加 try-catch，异常时将 status 设为 'failed'
 11. **B3**: 将匹配算法改为异步执行或使用独立线程
 12. **B10**: 改进贪心算法，确保宿舍尽量住满
@@ -681,7 +677,7 @@ payload = {
 ### 🔵 代码质量 — 8 项
 
 19. **M2**: 改用 UUID 或自增 ID
-20. **M4**: 移除虚假子分数或实现真实的子维度评分
+20. ~~**M4**: 移除虚假子分数~~ ✅ 已修复
 21. **M6**: CSV 导出使用标准转义（双引号包裹含逗号的字段）
 22. **M7**: `SaveAllocationRule` 使用 prepared statement 或更完善的转义
 23. **L1**: 注册添加密码强度校验
@@ -701,3 +697,9 @@ payload = {
 - L5: 注册自动登录
 - L6: 空状态引导
 - L8: loading 绑定
+
+### ✅ 第三轮源码验证确认已修复 — 3 项（2026-06-03）
+
+- C3: `AdjustResult` 已有 `recalc` lambda 重算 roommate_ids
+- B2: 前端格式问卷已补全 noise_tolerance / temperature_preference / gaming_behavior 映射
+- M4: `GetMatchResult` 已使用真实分数（sim_score / comp_score），不再使用虚假公式

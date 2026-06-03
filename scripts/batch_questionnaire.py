@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Batch questionnaire generation for all students.
-生成随机但合理的生活习惯问卷数据，提交到后端 API。
+Generates random but realistic questionnaire data, submits to backend API.
 """
 import requests, random, json, sys
 
@@ -10,11 +10,17 @@ BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8080"
 # --- 1. Admin login ---
 resp = requests.post(f"{BASE}/api/admin/login",
     json={"studentNo": "admin", "password": "admin123"})
+if resp.status_code != 200 or resp.json().get("code") != 200:
+    print(f"Admin login failed: {resp.text[:200]}")
+    sys.exit(1)
 admin_token = resp.json()["data"]["token"]
-headers = {"Authorization": f"Bearer {admin_token}"}
+admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
 # --- 2. Get all students ---
-resp = requests.get(f"{BASE}/api/admin/users", headers=headers)
+resp = requests.get(f"{BASE}/api/admin/users", headers=admin_headers)
+if resp.status_code != 200:
+    print(f"Failed to get users: {resp.text[:200]}")
+    sys.exit(1)
 users = [u for u in resp.json()["data"]["users"] if u["role"] == "student"]
 print(f"Found {len(users)} students")
 
@@ -49,6 +55,20 @@ for i, u in enumerate(users):
     college = u.get("college", "计算机学院")
     major = u.get("major", "软件工程")
 
+    # S1+S2 fix: login as student to get a valid token
+    try:
+        login_resp = requests.post(f"{BASE}/api/student/login",
+            json={"studentNo": sno, "password": "123456"}, timeout=10)
+        if login_resp.status_code != 200 or login_resp.json().get("code") != 200:
+            print(f"  SKIP [{sno}]: student login failed (default password may not match)")
+            fail += 1
+            continue
+        student_token = login_resp.json()["data"]["token"]
+    except Exception as e:
+        print(f"  SKIP [{sno}]: login error: {e}")
+        fail += 1
+        continue
+
     # Generate varied profile
     sleep = random.choice(SLEEP_OPTS)
     hygiene = random.choice([2,3,4,5])
@@ -67,6 +87,7 @@ for i, u in enumerate(users):
     veto_w = round(1.0 - sim_w - comp_w, 2)
 
     payload = {
+        "userId": uid,  # S2 fix: include userId in payload
         "basicInfo": {
             "gender": gender,
             "college": college,
@@ -97,7 +118,7 @@ for i, u in enumerate(users):
         r = requests.post(
             f"{BASE}/api/student/questionnaire/submit",
             headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer tk_test"},
+                     "Authorization": f"Bearer {student_token}"},
             json=payload, timeout=10
         )
         if r.status_code == 200 and r.json().get("code") == 200:

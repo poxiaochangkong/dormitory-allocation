@@ -71,6 +71,9 @@ frontend-matching/*.sw?
 # Docker-built binaries (not portable)
 backend/build-linux/
 
+# Local config with credentials
+backend/config/config.json
+
 # Keep documentation files
 !bug_report.md
 !系统设计说明书.docx
